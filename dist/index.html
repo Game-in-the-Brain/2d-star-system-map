@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Mneme System Map</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <script type="module" crossorigin src="/2d-star-system-map/assets/index-DIwZFegT.js"></script>
+    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/index-Bg5KasAm.css">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="starmap"></canvas>
+      <div id="controls" class="control-panel">
+        <div class="control-row">
+          <button id="btn-play" class="btn" aria-label="Play">▶</button>
+          <button id="btn-pause" class="btn" aria-label="Pause" style="display:none">⏸</button>
+          <button id="btn-reverse" class="btn" aria-label="Reverse">⏮</button>
+          <select id="speed-select" class="btn" title="Simulation speed">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="5">5×</option>
+            <option value="10">10×</option>
+            <option value="30">30×</option>
+            <option value="365">365×</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <button id="btn-step-minus-7" class="btn small">-7d</button>
+          <button id="btn-step-minus-1" class="btn small">-1d</button>
+          <button id="btn-step-plus-1" class="btn small">+1d</button>
+          <button id="btn-step-plus-7" class="btn small">+7d</button>
+          <button id="btn-reset" class="btn small">Reset Time</button>
+        </div>
+        <div class="control-row">
+          <button id="btn-reset-view" class="btn small">Reset View</button>
+        </div>
+        <div class="control-row info">
+          <span id="date-display">2300-01-01</span>
+        </div>
+        <div class="control-row seed-row">
+          <label for="seed-display">Seed:</label>
+          <input id="seed-display" type="text" readonly value="--------" />
+          <button id="btn-seed-regen" class="btn small" title="New seed">🎲</button>
+          <button id="btn-seed-copy" class="btn small" title="Copy seed">📋</button>
+        </div>
+        <div class="control-row seed-row">
+          <input id="seed-paste" type="text" placeholder="Paste seed…" maxlength="8" />
+          <button id="btn-seed-apply" class="btn small">Apply</button>
+        </div>
+      </div>
+      <div id="loading" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <p>Loading system…</p>
+      </div>
+    </div>
+  </body>
+</html>
