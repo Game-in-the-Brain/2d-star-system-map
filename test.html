@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mneme 2D Map — Test Harness</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+
+      html, body {
+        margin: 0; padding: 0;
+        background: #0a0a0f;
+        color: #e5e7eb;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        font-size: 13px;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      .header {
+        padding: 16px 20px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #f9fafb;
+        white-space: nowrap;
+      }
+      .header .sub {
+        font-size: 12px;
+        color: #6b7280;
+      }
+      #count-display {
+        margin-left: auto;
+        font-size: 12px;
+        color: #9ca3af;
+        white-space: nowrap;
+      }
+      #status {
+        color: #fbbf24;
+        font-size: 12px;
+        margin-left: auto;
+      }
+
+      /* ── Filter bar ── */
+      .filter-bar {
+        padding: 10px 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        background: rgba(15, 23, 42, 0.5);
+      }
+      .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .filter-label {
+        font-size: 11px;
+        color: #6b7280;
+        margin-right: 2px;
+        white-space: nowrap;
+      }
+      .flt-btn {
+        appearance: none;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.04);
+        color: #9ca3af;
+        padding: 4px 9px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s, border-color 0.12s;
+        white-space: nowrap;
+      }
+      .flt-btn:hover { background: rgba(255,255,255,0.09); color: #e5e7eb; }
+      .flt-btn.active {
+        background: rgba(99, 102, 241, 0.25);
+        border-color: rgba(99, 102, 241, 0.5);
+        color: #a5b4fc;
+      }
+
+      #search-input {
+        background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: #e5e7eb;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        width: 140px;
+        font-family: ui-monospace, monospace;
+      }
+      #search-input::placeholder { color: #4b5563; }
+
+      .btn-random {
+        appearance: none;
+        border: 1px solid rgba(250, 204, 21, 0.3);
+        background: rgba(250, 204, 21, 0.08);
+        color: #fde047;
+        padding: 5px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.12s;
+        white-space: nowrap;
+        margin-left: auto;
+      }
+      .btn-random:hover { background: rgba(250, 204, 21, 0.15); }
+
+      /* ── Table ── */
+      .table-wrap {
+        overflow-x: auto;
+        padding: 0 0 60px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      thead th {
+        padding: 8px 10px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: #6b7280;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        background: #0d0d14;
+        z-index: 10;
+        text-transform: uppercase;
+      }
+      thead th.num, thead th.center { text-align: right; }
+      thead th.center { text-align: center; }
+
+      tbody tr {
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      tbody tr:hover { background: rgba(255,255,255,0.035); }
+      tbody tr:hover .btn-view { opacity: 1; }
+
+      td {
+        padding: 7px 10px;
+        vertical-align: middle;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; color: #9ca3af; }
+      td.center { text-align: center; }
+      td.mono { font-family: ui-monospace, monospace; font-size: 11px; color: #6b7280; }
+      td.star { font-weight: 600; color: #e5e7eb; }
+      td.pos { color: #4ade80; }
+      td.neg { color: #f87171; }
+
+      .muted { color: #4b5563; }
+
+      .badge {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 4px;
+        border: 1px solid;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .hot-j { font-size: 14px; }
+
+      .btn-view {
+        appearance: none;
+        border: 1px solid rgba(99, 102, 241, 0.4);
+        background: rgba(99, 102, 241, 0.12);
+        color: #a5b4fc;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        opacity: 0.7;
+        transition: background 0.1s, opacity 0.1s;
+        white-space: nowrap;
+      }
+      .btn-view:hover { background: rgba(99, 102, 241, 0.25); opacity: 1; }
+
+      /* ── Column widths ── */
+      col.c-num   { width: 42px; }
+      col.c-id    { width: 90px; }
+      col.c-star  { width: 52px; }
+      col.c-type  { width: 110px; }
+      col.c-hab   { width: 58px; }
+      col.c-pop   { width: 72px; }
+      col.c-tl    { width: 42px; }
+      col.c-port  { width: 80px; }
+      col.c-bod   { width: 56px; }
+      col.c-hj    { width: 48px; }
+      col.c-view  { width: 86px; }
+
+      /* ── Pagination ── */
+      .pager {
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        padding: 10px 20px;
+        background: rgba(10, 10, 15, 0.92);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid rgba(255,255,255,0.07);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 20;
+      }
+      .pager-btn {
+        appearance: none;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.05);
+        color: #9ca3af;
+        padding: 5px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      .pager-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); color: #e5e7eb; }
+      .pager-btn:disabled { opacity: 0.3; cursor: default; }
+      #page-info { font-size: 12px; color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Mneme 2D Map — Test Harness</h1>
+      <span class="sub">Browse 1 000 batch-generated worlds · click any row or "View Map" to open the renderer</span>
+      <span id="count-display"></span>
+      <span id="status">Loading…</span>
+    </div>
+
+    <div class="filter-bar">
+      <!-- Star class -->
+      <div class="filter-group">
+        <span class="filter-label">Star</span>
+        <button class="flt-btn active" data-filter="class" data-value="">All</button>
+        <button class="flt-btn" data-filter="class" data-value="M">M</button>
+        <button class="flt-btn" data-filter="class" data-value="K">K</button>
+        <button class="flt-btn" data-filter="class" data-value="G">G</button>
+        <button class="flt-btn" data-filter="class" data-value="F">F</button>
+        <button class="flt-btn" data-filter="class" data-value="A">A</button>
+        <button class="flt-btn" data-filter="class" data-value="B">B</button>
+      </div>
+
+      <!-- World type -->
+      <div class="filter-group">
+        <span class="filter-label">World</span>
+        <button class="flt-btn active" data-filter="type" data-value="">All</button>
+        <button class="flt-btn" data-filter="type" data-value="Terrestrial">Terr.</button>
+        <button class="flt-btn" data-filter="type" data-value="Dwarf">Dwarf</button>
+        <button class="flt-btn" data-filter="type" data-value="Habitat">Habitat</button>
+      </div>
+
+      <!-- Starport -->
+      <div class="filter-group">
+        <span class="filter-label">Port</span>
+        <button class="flt-btn active" data-filter="port" data-value="">All</button>
+        <button class="flt-btn" data-filter="port" data-value="A">A</button>
+        <button class="flt-btn" data-filter="port" data-value="B">B</button>
+        <button class="flt-btn" data-filter="port" data-value="C">C</button>
+        <button class="flt-btn" data-filter="port" data-value="D">D</button>
+        <button class="flt-btn" data-filter="port" data-value="E">E</button>
+        <button class="flt-btn" data-filter="port" data-value="X">X</button>
+      </div>
+
+      <!-- Hot Jupiter -->
+      <div class="filter-group">
+        <span class="filter-label">Hot J</span>
+        <button class="flt-btn active" data-filter="hj" data-value="">All</button>
+        <button class="flt-btn" data-filter="hj" data-value="yes">🔥 Yes</button>
+        <button class="flt-btn" data-filter="hj" data-value="no">No</button>
+      </div>
+
+      <!-- ID search -->
+      <div class="filter-group">
+        <span class="filter-label">ID</span>
+        <input id="search-input" type="text" placeholder="filter by id…" spellcheck="false" />
+      </div>
+
+      <button id="btn-random" class="btn-random">⚡ Random</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <colgroup>
+          <col class="c-num" /><col class="c-id" /><col class="c-star" />
+          <col class="c-type" /><col class="c-hab" /><col class="c-pop" />
+          <col class="c-tl" /><col class="c-port" /><col class="c-bod" />
+          <col class="c-hj" /><col class="c-view" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>ID</th>
+            <th>Star</th>
+            <th>Main World</th>
+            <th class="num">Hab</th>
+            <th class="num">Pop</th>
+            <th class="num">TL</th>
+            <th>Port / Zone</th>
+            <th class="num">Bodies</th>
+            <th class="center">HJ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <button id="btn-prev" class="pager-btn" disabled>← Prev</button>
+      <span id="page-info">—</span>
+      <button id="btn-next" class="pager-btn">Next →</button>
+    </div>
+
+    <script type="module" src="./src/testHarness.ts"></script>
+  </body>
+</html>

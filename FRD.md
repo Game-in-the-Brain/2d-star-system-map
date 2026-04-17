@@ -6,6 +6,55 @@
 
 ---
 
+## ★ HANDOFF INSTRUCTIONS (AI models — read this first) ★
+
+**Working directory:** `/home/justin/opencode260220/2d-star-system-map`  
+**Build command:** `npm run build` (runs `tsc -b && vite build` — must pass with zero TypeScript errors).  
+**Dev command:** `npm run dev`
+
+### Quick orientation
+
+| What | Where |
+|------|-------|
+| Entry point (production) | `index.html` + `src/main.ts` |
+| Test harness | `test.html` + `src/testHarness.ts` |
+| Payload decode | `src/main.ts` `decodeMapPayload()` |
+| System → scene graph | `src/dataAdapter.ts` `buildSceneGraph()` |
+| Batch → payload adapter | `src/batchAdapter.ts` `batchToMapPayload()` |
+| Orbital mechanics | `src/orbitMath.ts` |
+| Rendering loop | `src/renderer.ts` `initRenderer()` |
+| Camera (zoom/pan) | `src/camera.ts` |
+| Input handlers | `src/input.ts` |
+| UI controls | `src/uiControls.ts` |
+| Seeded starfield | `src/starfield.ts` |
+| Shared types | `src/types.ts` |
+| Test batch data | `public/test-batch.json` (2.75 MB, 1 000 worlds) |
+
+### How data arrives
+
+This app is a **pure visualiser** — it does not generate data. All astronomical data comes from:
+
+1. **MWG (production):** The "View System Map" button in `Mneme-CE-World-Generator/src/components/SystemViewer.tsx` encodes a `StarSystem` as Base64 in `?system=` and opens `index.html?system=<base64>`.
+2. **Test harness (development):** Open `test.html`, browse 1 000 batch-generated worlds, click any row to open the renderer with that world.
+
+### Encoding contract (critical — do not break)
+
+MWG and this app share a Unicode-safe Base64 codec:
+
+**Encode (MWG side):**
+```ts
+btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+```
+
+**Decode (this app — `src/main.ts`):**
+```ts
+decodeURIComponent(Array.from(atob(encoded)).map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''))
+```
+
+If either side changes, the other breaks silently (blank map, no console error unless the JSON is malformed).
+
+---
+
 ## 1. Overview
 
 A standalone, dependency-free 2D canvas visualiser for Mneme-generated star systems. It receives astronomical data via a URL query string and renders an interactive, animated orbital map.
@@ -14,20 +63,40 @@ A standalone, dependency-free 2D canvas visualiser for Mneme-generated star syst
 
 ## 2. Test Data Generation
 
-### 2.1 Browser Console Method (Recommended)
+Two testing modes are supported.
 
-The fastest way to produce live test data is to use the MWG application itself.
+### 2.1 Test Harness — `test.html` (Primary)
 
-**Prerequisites:**
-- A modern browser with DevTools access
-- The MWG app loaded at `https://game-in-the-brain.github.io/Mneme-CE-World-Generator/`
+The repo ships a local test harness that lets you browse and open any of **1 000 batch-generated worlds** without needing MWG running.
 
-**Procedure:**
-1. Generate a star system in MWG (or load a saved one).
-2. Open DevTools → Console.
-3. Paste and run the following snippet:
+**Working directory:** `/home/justin/opencode260220/2d-star-system-map`
+
+```bash
+npm run dev
+# then open: http://localhost:<port>/test.html
+```
+
+The harness:
+- Fetches `public/test-batch.json` (the 1 000-world batch export from MWG).
+- Shows a filterable table — filter by star class (M/K/G/F/A/B), main world type (Terrestrial/Dwarf/Habitat), starport class (A–X), and hot Jupiter presence.
+- "View Map" button (or clicking any row) encodes the selected system as a `MapPayload` and opens `index.html?system=<base64>` in a new tab.
+
+**Adapter:** `src/batchAdapter.ts` converts the batch export shape to the `MapPayload` / `StarSystem` shapes the renderer expects. Key conversions:
+- `star.massSOL` → `primaryStar.mass`
+- `bodies[].au` → `distanceAU`; `bodies[].massEM` → `mass`
+- `gasClass` Roman numeral string (`"IV"`) → number (`4`)
+- Habitat main worlds (no matching body in array) default `massEM` to `1.0`
+
+**Batch file:** `public/test-batch.json` — 2.75 MB, fetched lazily. Do not bundle it into JS.
+
+---
+
+### 2.2 Live MWG Integration — Production Path
+
+When MWG's "View System Map" button is clicked, it encodes the live-generated `StarSystem` and opens this app. The source is `src/components/SystemViewer.tsx` in the MWG repo.
 
 ```javascript
+// Reproduce manually from MWG's browser console:
 const system = JSON.parse(localStorage.getItem('mneme_current_system'));
 const payload = {
   starSystem: system,
@@ -46,17 +115,7 @@ console.log(url);
 window.open(url, '_blank');
 ```
 
-**What it does:**
-- Retrieves the complete `StarSystem` object from MWG's `localStorage` key `mneme_current_system`.
-- Attaches a random 8-character `starfieldSeed` so each test has a unique background.
-- Sets the canonical Mneme epoch to `2300-01-01`.
-- Produces a Unicode-safe Base64 string using the `%XX` → `charCode` dance (required because `btoa` only accepts Latin-1).
-- Logs the final URL and opens it in a new tab.
-
-**Why this is the preferred method:**
-- Uses the exact runtime data model MWG produces.
-- No export/import files needed.
-- Starfield seed can be refreshed by rerunning the snippet on the same system.
+**Why the encode dance?** `btoa()` only accepts Latin-1. The `encodeURIComponent` + `replace` step converts all non-Latin-1 characters to their byte values before `btoa` sees them. The decode mirror in `main.ts` reverses this exactly. **Never simplify this to plain `btoa(json)`** — it will throw on any world with non-ASCII content.
 
 ---
 
@@ -151,7 +210,69 @@ Output is emitted to `dist/`. GitHub Pages serves from the `gh-pages` branch (or
 
 ---
 
-## 6. History
+## 6. Troubleshooting
+
+### 6.1 Map opens but shows no bodies
+
+**Check 1 — Payload decoded correctly?**
+Open DevTools → Console and run:
+```js
+const p = new URLSearchParams(location.search);
+const raw = p.get('system');
+if (!raw) { console.log('NO ?system= PARAM'); } else {
+  console.log(JSON.parse(decodeURIComponent(
+    Array.from(atob(raw)).map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+  )));
+}
+```
+Verify `starSystem.primaryStar` is present and body arrays have entries.
+
+**Check 2 — `buildSceneGraph` called with empty body arrays?**
+If all body arrays (`terrestrialWorlds`, `gasWorlds`, etc.) are empty or undefined, `dataAdapter.ts` only emits the primary star. Check MWG's `generator.ts` to confirm the planetary system is being attached to the `StarSystem` object before the button handler runs.
+
+---
+
+### 6.2 Main world missing from the rendered map
+
+`dataAdapter.ts` tries to find a body in the arrays at the same `distanceAU` as `mainWorld.distanceAU`. If it finds none, it adds a new body explicitly (QA-035 fix). If the main world still disappears:
+- Confirm `system.mainWorld` is not `null` in the payload (log the decoded payload).
+- Confirm `mainWorld.type` is one of: `"Terrestrial"`, `"Dwarf"`, `"Ice World"`, `"Habitat"`.
+- The gold-stroke `"★ MAIN"` body uses `strokeColour: '#FACC15'` — check it is not behind another body at the same pixel position.
+
+---
+
+### 6.3 `gasClass` renders all gas giants the same colour
+
+The renderer maps `gasClass` numbers 1–5 to five distinct colours. If all gas giants look the same (`gas-i` yellow), `gasClass` is arriving as a string (`"I"`, `"IV"`, etc.) instead of a number. MWG's `types/index.ts` must declare `gasClass: number`. Check that MWG has not accidentally changed this to `string`.
+
+---
+
+### 6.4 `InvalidCharacterError` in the browser console
+
+`btoa()` threw on a non-Latin-1 character in the payload JSON. The encode wrapper in MWG's `SystemViewer.tsx` prevents this. If the error appears, the `encodeURIComponent` + `replace` step has been removed or bypassed. Restore it:
+```ts
+btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+```
+
+---
+
+### 6.5 URL loads correctly in dev but fails on GitHub Pages
+
+- Confirm `vite.config.ts` has `base: '/2d-star-system-map/'`.
+- Confirm MWG constructs the URL with `new URL('/?system=...', 'https://game-in-the-brain.github.io/2d-star-system-map/')` — do **not** hardcode a path-relative URL.
+- History: this was QA-033. The monorepo sub-directory approach broke Pages routing; standalone repo fixed it.
+
+---
+
+### 6.6 Test harness (`test.html`) shows "Failed to load test-batch.json"
+
+- Confirm `public/test-batch.json` exists in the repo root's `public/` folder.
+- In dev mode, Vite serves `public/` at the root. The harness fetches `./test-batch.json` relative to `test.html`.
+- The file is ~2.75 MB — on slow connections the initial load takes a moment; the status line says "Loading batch data…" during fetch.
+
+---
+
+## 7. History
 
 | Date | Change |
 |------|--------|
