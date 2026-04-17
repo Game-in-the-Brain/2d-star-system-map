@@ -1,4 +1,4 @@
-import type { AppState, SceneBody } from './types';
+import type { AppState, SceneBody, ZoneBoundaries } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
 import { logScaleDistance, resetCamera } from './camera';
 
@@ -39,7 +39,6 @@ export function initRenderer(state: AppState): () => void {
   (state as unknown as Record<string, () => void>).initCamera = initCamera;
 
   function loop(now: number) {
-    // Cap dt to prevent huge jumps when the tab regains focus after being backgrounded
     const rawDt = (now - state.lastFrameTime) / 1000;
     const dt = Math.min(rawDt, 0.1);
     state.lastFrameTime = now;
@@ -66,12 +65,19 @@ export function initRenderer(state: AppState): () => void {
   };
 }
 
+interface BodyFrame {
+  x: number;
+  y: number;
+  angle: number;
+  distPx: number;
+}
+
 function draw(
   state: AppState,
   starfield: ReturnType<typeof generateStarfield>,
   nebulas: ReturnType<typeof generateNebula>
 ): void {
-  const { ctx, width, height, bodies, camera, simDayOffset } = state;
+  const { ctx, width, height, bodies, camera, simDayOffset, zones } = state;
   if (!ctx) return;
 
   // Clear background
@@ -86,52 +92,149 @@ function draw(
 
   const cx = width / 2;
   const cy = height / 2;
+  const originX = cx - camera.x * camera.zoom;
+  const originY = cy - camera.y * camera.zoom;
 
-  // Orbits
+  // Zone bands (behind orbits)
+  if (zones) {
+    drawZoneBands(ctx, zones, originX, originY, camera.zoom, width, height);
+  }
+
+  // Pre-compute all body frames
+  const frames = computeBodyFrames(bodies, originX, originY, simDayOffset, camera.zoom);
+
+  // Orbits (L1 bodies)
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.lineWidth = 1;
   for (const body of bodies) {
+    if (body.parentId) continue; // Moon orbits drawn separately
     if (body.distanceAU <= 0) continue;
     const r = logScaleDistance(body.distanceAU, 80) * camera.zoom;
     ctx.beginPath();
-    ctx.arc(cx - camera.x * camera.zoom, cy - camera.y * camera.zoom, r, 0, Math.PI * 2);
+    ctx.arc(originX, originY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Moon orbits (small circles around parents)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (const body of bodies) {
+    if (!body.parentId || !body.moonOrbitAU) continue;
+    const parentFrame = frames.get(body.parentId);
+    if (!parentFrame) continue;
+    const moonOrbitRadius = Math.max(4, body.moonOrbitAU * 3000 * camera.zoom);
+    ctx.beginPath();
+    ctx.arc(parentFrame.x, parentFrame.y, moonOrbitRadius, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   // Bodies
   for (const body of bodies) {
-    drawBody(ctx, body, camera, cx, cy, simDayOffset, width, height);
+    const frame = frames.get(body.id);
+    if (!frame) continue;
+    drawBody(ctx, body, frame, originX, originY, width, height, camera.zoom);
   }
 }
 
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
 
-function drawBody(
+const ZONE_BANDS: { key: keyof ZoneBoundaries; inner: string; outer: string }[] = [
+  { key: 'infernal', inner: 'rgba(255,60,60,0.18)', outer: 'rgba(255,60,60,0.02)' },
+  { key: 'hot', inner: 'rgba(255,140,40,0.12)', outer: 'rgba(255,140,40,0.02)' },
+  { key: 'conservative', inner: 'rgba(40,220,100,0.10)', outer: 'rgba(40,220,100,0.02)' },
+  { key: 'cold', inner: 'rgba(60,140,255,0.10)', outer: 'rgba(60,140,255,0.02)' },
+];
+
+function drawZoneBands(
   ctx: CanvasRenderingContext2D,
-  body: SceneBody,
-  camera: { x: number; y: number; zoom: number },
-  cx: number,
-  cy: number,
-  simDayOffset: number,
+  zones: ZoneBoundaries,
+  originX: number,
+  originY: number,
+  zoom: number,
   width: number,
   height: number
 ): void {
-  const period = body.periodDays;
-  const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
-  const distPx = logScaleDistance(body.distanceAU, 80) * camera.zoom;
-  const visualPos = {
-    x: cx + Math.cos(angle) * distPx - camera.x * camera.zoom,
-    y: cy + Math.sin(angle) * distPx - camera.y * camera.zoom,
-  };
+  for (const band of ZONE_BANDS) {
+    const zone = zones[band.key];
+    if (!zone || zone.max === null) continue;
+    const innerR = logScaleDistance(Math.max(0, zone.min), 80) * zoom;
+    const outerR = logScaleDistance(zone.max, 80) * zoom;
+    if (outerR <= 0) continue;
+
+    const gradient = ctx.createRadialGradient(originX, originY, innerR, originX, originY, outerR);
+    gradient.addColorStop(0, band.inner);
+    gradient.addColorStop(1, band.outer);
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(originX, originY, outerR, 0, Math.PI * 2);
+    ctx.arc(originX, originY, innerR, 0, Math.PI * 2, true);
+    ctx.fill();
+  }
+}
+
+function computeBodyFrames(
+  bodies: SceneBody[],
+  originX: number,
+  originY: number,
+  simDayOffset: number,
+  zoom: number
+): Map<string, BodyFrame> {
+  const frames = new Map<string, BodyFrame>();
+
+  // First pass: L1 bodies (no parent)
+  for (const body of bodies) {
+    if (body.parentId) continue;
+    const period = body.periodDays;
+    const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
+    const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * zoom : 0;
+    frames.set(body.id, {
+      x: originX + Math.cos(angle) * distPx,
+      y: originY + Math.sin(angle) * distPx,
+      angle,
+      distPx,
+    });
+  }
+
+  // Second pass: moons (need parent position)
+  for (const body of bodies) {
+    if (!body.parentId) continue;
+    const parentFrame = frames.get(body.parentId);
+    if (!parentFrame) continue;
+    const period = body.periodDays;
+    const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
+    const moonDistPx = body.moonOrbitAU ? Math.max(4, body.moonOrbitAU * 3000 * zoom) : 4;
+    frames.set(body.id, {
+      x: parentFrame.x + Math.cos(angle) * moonDistPx,
+      y: parentFrame.y + Math.sin(angle) * moonDistPx,
+      angle,
+      distPx: moonDistPx,
+    });
+  }
+
+  return frames;
+}
+
+function drawBody(
+  ctx: CanvasRenderingContext2D,
+  body: SceneBody,
+  frame: BodyFrame,
+  originX: number,
+  originY: number,
+  width: number,
+  height: number,
+  zoom: number
+): void {
+  const pos = { x: frame.x, y: frame.y };
 
   // Simple off-screen culling for non-disk bodies (with a 20px margin)
   if (body.type !== 'disk') {
     const margin = 20;
     if (
-      visualPos.x < -margin ||
-      visualPos.x > width + margin ||
-      visualPos.y < -margin ||
-      visualPos.y > height + margin
+      pos.x < -margin ||
+      pos.x > width + margin ||
+      pos.y < -margin ||
+      pos.y > height + margin
     ) {
       return;
     }
@@ -145,10 +248,10 @@ function drawBody(
       const colour = DISK_COLOURS[body.id.length % DISK_COLOURS.length];
       ctx.fillStyle = colour;
       for (const pt of body.diskPoints) {
-        const ptAngle = angle + pt.angle;
-        const ptRadius = distPx + distPx * pt.radiusOffset;
-        const x = cx + Math.cos(ptAngle) * ptRadius - camera.x * camera.zoom;
-        const y = cy + Math.sin(ptAngle) * ptRadius - camera.y * camera.zoom;
+        const ptAngle = frame.angle + pt.angle;
+        const ptRadius = frame.distPx + frame.distPx * pt.radiusOffset;
+        const x = originX + Math.cos(ptAngle) * ptRadius;
+        const y = originY + Math.sin(ptAngle) * ptRadius;
         ctx.globalAlpha = pt.opacity;
         ctx.beginPath();
         ctx.arc(x, y, pt.size, 0, Math.PI * 2);
@@ -156,12 +259,11 @@ function drawBody(
       }
       ctx.globalAlpha = 1;
     } else {
-      // Fallback to dashed ring if no points generated
       ctx.strokeStyle = body.strokeColour;
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.arc(visualPos.x, visualPos.y, body.radiusPx, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, body.radiusPx, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -170,7 +272,7 @@ function drawBody(
     ctx.strokeStyle = body.strokeColour;
     ctx.lineWidth = body.isMainWorld ? 2 : 1;
     ctx.beginPath();
-    ctx.arc(visualPos.x, visualPos.y, body.radiusPx, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, body.radiusPx, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -180,13 +282,21 @@ function drawBody(
     body.isMainWorld ||
     body.type.startsWith('star') ||
     body.type === 'disk' ||
-    camera.zoom >= 0.35;
+    zoom >= 0.35;
 
   if (shouldDrawLabel) {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(body.label, visualPos.x, visualPos.y + body.radiusPx + 12);
+    ctx.fillText(body.label, pos.x, pos.y + body.radiusPx + 12);
+  }
+
+  // Velocity label (at higher zoom or for main worlds)
+  if (body.velocityKms && (body.isMainWorld || zoom >= 1.0)) {
+    ctx.fillStyle = 'rgba(200,220,255,0.6)';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${body.velocityKms} km/s`, pos.x, pos.y + body.radiusPx + (shouldDrawLabel ? 24 : 12));
   }
 
   ctx.restore();

@@ -1,6 +1,10 @@
 import type { Point } from './types';
 
 const EARTH_PERIOD_DAYS = 365.25;
+const G = 6.674e-11; // m³ kg⁻¹ s⁻²
+const EM_TO_KG = 5.972e24; // kg
+const AU_TO_M = 1.496e11; // m
+const SECONDS_PER_DAY = 86400;
 
 /**
  * Calculate orbital period from semi-major axis (AU) using Kepler's 3rd Law.
@@ -8,6 +12,18 @@ const EARTH_PERIOD_DAYS = 365.25;
  */
 export function calculatePeriodDays(a: number): number {
   return Math.pow(a, 1.5) * EARTH_PERIOD_DAYS;
+}
+
+/**
+ * Calculate orbital period for a moon orbiting a planet.
+ * T = 2π × √(a³ / (G × M))  where a is in metres, M is in kg.
+ */
+export function calculateMoonPeriodDays(parentMassEM: number, orbitAU: number): number {
+  if (orbitAU <= 0 || parentMassEM <= 0) return 0;
+  const a = orbitAU * AU_TO_M;
+  const M = parentMassEM * EM_TO_KG;
+  const T_seconds = 2 * Math.PI * Math.sqrt((a * a * a) / (G * M));
+  return T_seconds / SECONDS_PER_DAY;
 }
 
 /**
@@ -49,9 +65,6 @@ export function calculateOrbitalVelocityKms(starMassSolar: number, distanceAU: n
  */
 export function calculateMoonOrbitalVelocityKms(parentMassEM: number, orbitAU: number, variance = 0.05): number {
   if (orbitAU <= 0 || parentMassEM <= 0) return 0;
-  const G = 6.674e-11; // m³ kg⁻¹ s⁻²
-  const EM_TO_KG = 5.972e24; // kg
-  const AU_TO_M = 1.496e11; // m
   const r = orbitAU * AU_TO_M;
   const M = parentMassEM * EM_TO_KG;
   const baseVelocity = Math.sqrt((G * M) / r); // m/s

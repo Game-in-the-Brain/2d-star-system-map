@@ -3,6 +3,14 @@
  * These mirror the MWG StarSystem shape where needed.
  */
 
+export interface ZoneBoundaries {
+  infernal: { min: number; max: number };
+  hot: { min: number; max: number };
+  conservative: { min: number; max: number };
+  cold: { min: number; max: number };
+  outer: { min: number; max: number | null };
+}
+
 // Minimal StarSystem shape needed by the 2D map (mirrors MWG)
 export interface StarSystem {
   key?: string;
@@ -18,31 +26,49 @@ export interface StarSystem {
     orbitDistance: number;
   }>;
   circumstellarDisks?: Array<{
+    id?: string;
     distanceAU: number;
     mass: number;
   }>;
   dwarfPlanets?: Array<{
+    id?: string;
     distanceAU: number;
     mass: number;
   }>;
   terrestrialWorlds?: Array<{
+    id?: string;
     distanceAU: number;
     mass: number;
   }>;
   iceWorlds?: Array<{
+    id?: string;
     distanceAU: number;
     mass: number;
   }>;
   gasWorlds?: Array<{
+    id?: string;
     distanceAU: number;
     mass: number;
     gasClass: number;
+  }>;
+  moons?: Array<{
+    id?: string;
+    distanceAU: number;
+    mass: number;
+    moonOrbitAU: number;
+    parentId: string;
+    type?: string;
+  }>;
+  rings?: Array<{
+    id?: string;
+    parentId: string;
   }>;
   mainWorld?: {
     type: string;
     distanceAU: number;
     massEM: number;
   } | null;
+  zones?: ZoneBoundaries;
 }
 
 export interface MapPayload {
@@ -71,7 +97,8 @@ export type BodyType =
   | 'gas-ii'
   | 'gas-iii'
   | 'gas-iv'
-  | 'gas-v';
+  | 'gas-v'
+  | 'moon';
 
 export interface DiskPoint {
   angle: number; // radians offset from disk's orbital angle
@@ -89,11 +116,15 @@ export interface SceneBody {
   radiusPx: number;
   colour: string;
   strokeColour: string;
-  angle: number; // radians
+  angle: number; // radians at epoch (2300-01-01)
   periodDays: number;
   isMainWorld: boolean;
   orbitDelta?: number; // visual nudge if needed
   diskPoints?: DiskPoint[];
+  // Moon / child fields
+  parentId?: string;
+  moonOrbitAU?: number;
+  velocityKms?: number;
 }
 
 export interface CameraState {
@@ -116,4 +147,5 @@ export interface AppState {
   lastFrameTime: number;
   width: number;
   height: number;
+  zones?: ZoneBoundaries;
 }

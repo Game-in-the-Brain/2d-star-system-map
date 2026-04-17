@@ -40,7 +40,7 @@ export function zoomTo(camera: CameraState, screenPoint: Point, cx: number, cy: 
   const worldBefore = screenToWorld(screenPoint, camera, cx, cy);
   camera.zoom *= factor;
   // Clamp zoom to reasonable bounds
-  camera.zoom = Math.max(0.1, Math.min(camera.zoom, 50));
+  camera.zoom = Math.max(0.05, Math.min(camera.zoom, 500));
   const worldAfter = screenToWorld(screenPoint, camera, cx, cy);
   camera.x += worldAfter.x - worldBefore.x;
   camera.y += worldAfter.y - worldBefore.y;

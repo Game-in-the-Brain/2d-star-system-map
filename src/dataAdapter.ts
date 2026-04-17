@@ -1,5 +1,5 @@
 import type { SceneBody, BodyType, DiskPoint, StarSystem } from './types';
-import { calculatePeriodDays, hashToFloat } from './orbitMath';
+import { calculatePeriodDays, calculateMoonPeriodDays, calculateOrbitalVelocityKms, calculateMoonOrbitalVelocityKms, hashToFloat } from './orbitMath';
 import { mulberry32 } from './starfield';
 
 const SPECTRAL_COLOURS: Record<string, string> = {
@@ -24,6 +24,7 @@ const BODY_COLOURS: Record<BodyType, { fill: string; stroke: string }> = {
   'gas-iii': { fill: '#FB923C', stroke: '#9A3412' },
   'gas-iv': { fill: '#C084FC', stroke: '#7E22CE' },
   'gas-v': { fill: '#E5E7EB', stroke: '#4B5563' },
+  moon: { fill: '#D1D5DB', stroke: '#6B7280' },
 };
 
 function getSpectralColour(cls: string): string {
@@ -37,19 +38,32 @@ function massToRadiusPx(mass: number, type: BodyType): number {
   if (type === 'disk') return 0;
   if (type === 'dwarf') return 3;
   if (type === 'ice') return 3.5;
+  if (type === 'moon') return 2;
   return 4; // terrestrial
 }
 
 /**
  * Build a scene graph from a StarSystem.
- * Phase 1: INTRAS Level 1 only (stars, disks, planets).
+ * Includes L1 bodies (stars, disks, planets) and L2 moons.
  */
 export function buildSceneGraph(system: StarSystem): SceneBody[] {
   const bodies: SceneBody[] = [];
   const baseHash = system.key || JSON.stringify(system.primaryStar);
+  const starMass = system.primaryStar.mass;
+
+  // Map from original body ID → scene body ID (for parent lookup)
+  const idMap = new Map<string, string>();
+
+  // Helper to add a body and record its ID mapping
+  function addBody(originalId: string | undefined, sceneBody: SceneBody): void {
+    bodies.push(sceneBody);
+    if (originalId) {
+      idMap.set(originalId, sceneBody.id);
+    }
+  }
 
   // Primary star
-  bodies.push({
+  addBody(undefined, {
     id: 'star-primary',
     type: 'star-primary',
     label: `${system.primaryStar.class}${system.primaryStar.grade}`,
@@ -64,10 +78,11 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
   });
 
   // Companion stars
-  system.companionStars?.forEach((star: { class: string; grade: number; mass: number; orbitDistance: number }, idx: number) => {
+  system.companionStars?.forEach((star, idx) => {
     const angle = hashToFloat(baseHash + `-companion-${idx}`) * Math.PI * 2;
-    bodies.push({
-      id: `star-companion-${idx}`,
+    const id = `star-companion-${idx}`;
+    addBody(undefined, {
+      id,
       type: 'star-companion',
       label: `${star.class}${star.grade}`,
       distanceAU: star.orbitDistance,
@@ -76,17 +91,19 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       colour: getSpectralColour(star.class),
       strokeColour: '#ffffff',
       angle,
-      periodDays: calculatePeriodDays(star.orbitDistance * 5), // rough companion period
+      periodDays: calculatePeriodDays(star.orbitDistance * 5),
       isMainWorld: false,
+      velocityKms: calculateOrbitalVelocityKms(starMass, star.orbitDistance * 5),
     });
   });
 
   // Circumstellar disks
-  system.circumstellarDisks?.forEach((disk: { distanceAU: number; mass: number }, idx: number) => {
+  system.circumstellarDisks?.forEach((disk, idx) => {
     const angle = hashToFloat(baseHash + `-disk-${idx}`) * Math.PI * 2;
     const diskSeed = `${baseHash}-disk-${idx}`;
-    bodies.push({
-      id: `disk-${idx}`,
+    const id = disk.id || `disk-${idx}`;
+    addBody(disk.id, {
+      id,
       type: 'disk',
       label: 'Disk',
       distanceAU: disk.distanceAU,
@@ -102,10 +119,11 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
   });
 
   // Dwarf planets
-  system.dwarfPlanets?.forEach((p: { distanceAU: number; mass: number }, idx: number) => {
+  system.dwarfPlanets?.forEach((p, idx) => {
     const angle = hashToFloat(baseHash + `-dwarf-${idx}`) * Math.PI * 2;
-    bodies.push({
-      id: `dwarf-${idx}`,
+    const id = p.id || `dwarf-${idx}`;
+    addBody(p.id, {
+      id,
       type: 'dwarf',
       label: 'Dwarf',
       distanceAU: p.distanceAU,
@@ -116,14 +134,16 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       angle,
       periodDays: calculatePeriodDays(p.distanceAU),
       isMainWorld: false,
+      velocityKms: calculateOrbitalVelocityKms(starMass, p.distanceAU),
     });
   });
 
   // Terrestrial worlds
-  system.terrestrialWorlds?.forEach((p: { distanceAU: number; mass: number }, idx: number) => {
+  system.terrestrialWorlds?.forEach((p, idx) => {
     const angle = hashToFloat(baseHash + `-terrestrial-${idx}`) * Math.PI * 2;
-    bodies.push({
-      id: `terrestrial-${idx}`,
+    const id = p.id || `terrestrial-${idx}`;
+    addBody(p.id, {
+      id,
       type: 'terrestrial',
       label: 'Terrestrial',
       distanceAU: p.distanceAU,
@@ -134,14 +154,16 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       angle,
       periodDays: calculatePeriodDays(p.distanceAU),
       isMainWorld: system.mainWorld?.type === 'Terrestrial' && system.mainWorld.distanceAU === p.distanceAU,
+      velocityKms: calculateOrbitalVelocityKms(starMass, p.distanceAU),
     });
   });
 
   // Ice worlds
-  system.iceWorlds?.forEach((p: { distanceAU: number; mass: number }, idx: number) => {
+  system.iceWorlds?.forEach((p, idx) => {
     const angle = hashToFloat(baseHash + `-ice-${idx}`) * Math.PI * 2;
-    bodies.push({
-      id: `ice-${idx}`,
+    const id = p.id || `ice-${idx}`;
+    addBody(p.id, {
+      id,
       type: 'ice',
       label: 'Ice',
       distanceAU: p.distanceAU,
@@ -152,11 +174,12 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       angle,
       periodDays: calculatePeriodDays(p.distanceAU),
       isMainWorld: system.mainWorld?.type === 'Ice World' && system.mainWorld.distanceAU === p.distanceAU,
+      velocityKms: calculateOrbitalVelocityKms(starMass, p.distanceAU),
     });
   });
 
   // Gas worlds
-  system.gasWorlds?.forEach((p: { distanceAU: number; mass: number; gasClass: number }, idx: number) => {
+  system.gasWorlds?.forEach((p, idx) => {
     let type: BodyType = 'gas-i';
     switch (p.gasClass) {
       case 1: type = 'gas-i'; break;
@@ -166,8 +189,9 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       case 5: type = 'gas-v'; break;
     }
     const angle = hashToFloat(baseHash + `-gas-${idx}`) * Math.PI * 2;
-    bodies.push({
-      id: `gas-${idx}`,
+    const id = p.id || `gas-${idx}`;
+    addBody(p.id, {
+      id,
       type,
       label: `Gas ${p.gasClass === 4 ? 'IV/V' : toRoman(p.gasClass)}`,
       distanceAU: p.distanceAU,
@@ -178,12 +202,11 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       angle,
       periodDays: calculatePeriodDays(p.distanceAU),
       isMainWorld: false,
+      velocityKms: calculateOrbitalVelocityKms(starMass, p.distanceAU),
     });
   });
 
-  // Main world — mark existing body or add explicitly (QA-035)
-  // mainWorld is generated independently and is never in the body arrays,
-  // so the fallback always needs to add it as a new body.
+  // Main world — mark existing body or add explicitly
   if (system.mainWorld) {
     const mw = system.mainWorld;
     const existing = bodies.find(
@@ -200,7 +223,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
         mw.type === 'Dwarf' ? 'dwarf'
         : mw.type === 'Ice World' ? 'ice'
         : 'terrestrial';
-      bodies.push({
+      addBody(undefined, {
         id: 'main-world',
         type,
         label: '★ MAIN',
@@ -212,9 +235,39 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
         angle: hashToFloat(baseHash + '-main-world') * Math.PI * 2,
         periodDays: calculatePeriodDays(mw.distanceAU),
         isMainWorld: true,
+        velocityKms: calculateOrbitalVelocityKms(starMass, mw.distanceAU),
       });
     }
   }
+
+  // Moons (L2 children)
+  system.moons?.forEach((moon, idx) => {
+    const parentSceneId = idMap.get(moon.parentId);
+    if (!parentSceneId) return; // Skip orphaned moons
+
+    const parentBody = bodies.find(b => b.id === parentSceneId);
+    if (!parentBody) return;
+
+    const angle = hashToFloat(baseHash + `-moon-${idx}`) * Math.PI * 2;
+    const id = moon.id || `moon-${idx}`;
+
+    addBody(moon.id, {
+      id,
+      type: 'moon',
+      label: 'Moon',
+      distanceAU: parentBody.distanceAU, // orbital distance from star (for reference)
+      mass: moon.mass,
+      radiusPx: massToRadiusPx(moon.mass, 'moon'),
+      colour: BODY_COLOURS.moon.fill,
+      strokeColour: BODY_COLOURS.moon.stroke,
+      angle,
+      periodDays: calculateMoonPeriodDays(parentBody.mass, moon.moonOrbitAU),
+      isMainWorld: false,
+      parentId: parentSceneId,
+      moonOrbitAU: moon.moonOrbitAU,
+      velocityKms: calculateMoonOrbitalVelocityKms(parentBody.mass, moon.moonOrbitAU),
+    });
+  });
 
   return bodies;
 }

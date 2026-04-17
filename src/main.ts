@@ -83,6 +83,7 @@ function loadSystemIntoState(state: AppState, payload: MapPayload): void {
   );
   state.simDayOffset = 0;
   state.bodies = buildSceneGraph(payload.starSystem);
+  state.zones = payload.starSystem.zones;
 
   // Update seed display
   const seedDisplay = document.getElementById('seed-display') as HTMLInputElement | null;
