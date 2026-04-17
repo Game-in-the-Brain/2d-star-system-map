@@ -49,6 +49,13 @@
           <input id="seed-paste" type="text" placeholder="Paste seed…" maxlength="8" />
           <button id="btn-seed-apply" class="btn small">Apply</button>
         </div>
+        <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+          <textarea id="system-paste" placeholder="Paste system JSON from MWG…" rows="3" style="width: 100%; font-family: monospace; font-size: 10px; resize: vertical;"></textarea>
+        </div>
+        <div class="control-row">
+          <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
+          <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
+        </div>
       </div>
       <div id="loading" class="loading-overlay" style="display:none">
         <div class="spinner"></div>
