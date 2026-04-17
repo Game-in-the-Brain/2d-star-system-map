@@ -4,6 +4,7 @@ import { initUIControls } from './uiControls';
 import { buildSceneGraph } from './dataAdapter';
 import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
+import { generateRandomSystem } from './generator';
 
 let currentPayload: MapPayload | null = null;
 
@@ -98,6 +99,14 @@ function initPasteControls(state: AppState): void {
   const systemPaste = document.getElementById('system-paste') as HTMLTextAreaElement | null;
   const btnLoadSystem = document.getElementById('btn-load-system') as HTMLButtonElement | null;
   const btnDownloadSystem = document.getElementById('btn-download-system') as HTMLButtonElement | null;
+  const btnGenerateSystem = document.getElementById('btn-generate-system') as HTMLButtonElement | null;
+
+  if (btnGenerateSystem) {
+    btnGenerateSystem.addEventListener('click', () => {
+      const payload = generateRandomSystem();
+      loadSystemIntoState(state, payload);
+    });
+  }
 
   if (btnLoadSystem && systemPaste) {
     btnLoadSystem.addEventListener('click', () => {
