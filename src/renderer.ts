@@ -116,15 +116,17 @@ function draw(
   }
 
   // Moon orbits (small circles around parents)
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 1;
   for (const body of bodies) {
     if (!body.parentId || !body.moonOrbitAU) continue;
     const parentFrame = frames.get(body.parentId);
     if (!parentFrame) continue;
-    const moonOrbitRadius = Math.max(4, body.moonOrbitAU * 3000 * camera.zoom);
+    const moonFrame = frames.get(body.id);
+    if (!moonFrame) continue;
+    // Orbit radius matches the computed offset (see computeBodyFrames)
     ctx.beginPath();
-    ctx.arc(parentFrame.x, parentFrame.y, moonOrbitRadius, 0, Math.PI * 2);
+    ctx.arc(parentFrame.x, parentFrame.y, moonFrame.distPx, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -203,7 +205,11 @@ function computeBodyFrames(
     if (!parentFrame) continue;
     const period = body.periodDays;
     const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
-    const moonDistPx = body.moonOrbitAU ? Math.max(4, body.moonOrbitAU * 3000 * zoom) : 4;
+    // Scale moon orbit so it's visible but never exceeds a fraction of the parent's orbit.
+    // Coefficient 200 (was 3000) prevents moons from appearing to orbit the star at high zoom.
+    const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * zoom : 0;
+    const maxMoonDist = parentFrame.distPx * 0.25;
+    const moonDistPx = Math.max(6, Math.min(maxMoonDist, rawMoonDist));
     frames.set(body.id, {
       x: parentFrame.x + Math.cos(angle) * moonDistPx,
       y: parentFrame.y + Math.sin(angle) * moonDistPx,
