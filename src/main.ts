@@ -5,6 +5,7 @@ import { buildSceneGraph } from './dataAdapter';
 import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
 import { generateRandomSystem } from './generator';
+import { APP_FULL_VERSION } from './version';
 
 let currentPayload: MapPayload | null = null;
 
@@ -187,6 +188,12 @@ function main() {
   initInputHandlers(state, resetView);
   initRenderer(state);
   initPasteControls(state);
+
+  // Render version in UI
+  const versionDisplay = document.getElementById('version-display');
+  const versionWatermark = document.getElementById('version-watermark');
+  if (versionDisplay) versionDisplay.textContent = APP_FULL_VERSION;
+  if (versionWatermark) versionWatermark.textContent = APP_FULL_VERSION;
 }
 
 main();

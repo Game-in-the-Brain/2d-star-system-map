@@ -5,14 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Mneme System Map</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-Ddu6s5ii.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-DXJl0jjY.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
-    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Bg5KasAm.css">
+    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-CHZO5cjO.css">
   </head>
   <body>
     <div id="app">
       <canvas id="starmap"></canvas>
+      <button id="btn-expand-panel" class="panel-fab" aria-label="Open controls" title="Open controls" style="display:none">☰</button>
       <div id="controls" class="control-panel">
+        <div class="panel-header">
+          <button id="btn-collapse-panel" class="btn panel-toggle" aria-label="Close controls" title="Close controls">✕</button>
+        </div>
         <div class="control-row">
           <a href="https://game-in-the-brain.github.io/Mneme-CE-World-Generator/" target="_blank" rel="noopener noreferrer" class="btn small" style="width: 100%; text-decoration: none; display: inline-block; text-align: center;">🌍 Generate Worlds →</a>
         </div>
@@ -64,7 +68,11 @@
           <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
           <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
         </div>
+        <div class="version-footer">
+          <span id="version-display" title="Version">—</span>
+        </div>
       </div>
+      <div id="version-watermark" class="version-watermark" title="Version">—</div>
       <div id="loading" class="loading-overlay" style="display:none">
         <div class="spinner"></div>
         <p>Loading system…</p>

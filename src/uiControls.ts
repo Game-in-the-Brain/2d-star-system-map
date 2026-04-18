@@ -17,6 +17,9 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
   const btnSeedCopy = document.getElementById('btn-seed-copy') as HTMLButtonElement | null;
   const seedPaste = document.getElementById('seed-paste') as HTMLInputElement | null;
   const btnSeedApply = document.getElementById('btn-seed-apply') as HTMLButtonElement | null;
+  const btnCollapsePanel = document.getElementById('btn-collapse-panel') as HTMLButtonElement | null;
+  const btnExpandPanel = document.getElementById('btn-expand-panel') as HTMLButtonElement | null;
+  const controlPanel = document.getElementById('controls') as HTMLElement | null;
 
   function updateDateDisplay() {
     if (!dateDisplay) return;
@@ -39,6 +42,32 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
 
   function updateSeed() {
     if (seedDisplay) seedDisplay.value = state.starfieldSeed;
+  }
+
+  // Panel collapse / expand
+  function setPanelCollapsed(collapsed: boolean) {
+    if (!controlPanel || !btnExpandPanel) return;
+    if (collapsed) {
+      controlPanel.classList.add('collapsed');
+      btnExpandPanel.style.display = 'flex';
+    } else {
+      controlPanel.classList.remove('collapsed');
+      btnExpandPanel.style.display = 'none';
+    }
+  }
+
+  if (btnCollapsePanel) {
+    btnCollapsePanel.addEventListener('click', () => setPanelCollapsed(true));
+  }
+
+  if (btnExpandPanel) {
+    btnExpandPanel.addEventListener('click', () => setPanelCollapsed(false));
+  }
+
+  // Default to collapsed on narrow viewports (phones)
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    setPanelCollapsed(true);
   }
 
   // Hook into RAF by updating the date display each frame via a lightweight interval
