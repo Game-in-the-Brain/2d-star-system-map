@@ -2,7 +2,6 @@ import type { AppState, SceneBody, TravelPlan, TravelPlannerState, Point } from 
 import { buildTravelPlan } from './travelPhysics';
 import { logScaleDistance } from './camera';
 
-const HIT_RADIUS_PX = 18;
 
 export function createTravelPlannerState(): TravelPlannerState {
   return {
@@ -58,27 +57,45 @@ function getBodyScreenPos(body: SceneBody, state: AppState): Point | null {
 }
 
 /**
- * Find the body closest to the given screen position.
- * Returns null if no body is within HIT_RADIUS_PX.
+ * Find the body at the given screen position.
+ *
+ * Rules:
+ * 1. Iterate in reverse render order (last-drawn = top-most = picked first).
+ * 2. Hit radius = body's visual radius × zoom (no minimum floor).
+ * 3. Skip bodies whose centre is off-screen (with 40 px margin).
  */
 export function findBodyAtScreenPos(
   screenX: number,
   screenY: number,
   state: AppState
 ): SceneBody | null {
-  const { bodies, camera } = state;
+  const { bodies, camera, width, height } = state;
   if (!bodies.length) return null;
 
+  const margin = 40;
   let nearest: SceneBody | null = null;
   let nearestDist = Infinity;
 
-  for (const body of bodies) {
+  // Reverse iteration = top-most layer first
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const body = bodies[i];
     const screenPos = getBodyScreenPos(body, state);
     if (!screenPos) continue;
+
+    // Visibility culling: skip off-screen centres
+    if (
+      screenPos.x < -margin ||
+      screenPos.x > width + margin ||
+      screenPos.y < -margin ||
+      screenPos.y > height + margin
+    ) {
+      continue;
+    }
+
     const dist = Math.hypot(screenPos.x - screenX, screenPos.y - screenY);
 
-    // Use body's visual radius as minimum hit size
-    const hitR = Math.max(body.radiusPx * camera.zoom, HIT_RADIUS_PX);
+    // Hit radius = exact visual size, scaling with zoom
+    const hitR = Math.max(body.radiusPx * camera.zoom, 2);
     if (dist < hitR && dist < nearestDist) {
       nearest = body;
       nearestDist = dist;
@@ -262,29 +279,33 @@ export function handleTravelPlannerClick(
   if (!tp || !tp.isActive) return false;
 
   const body = findBodyAtScreenPos(screenX, screenY, state);
-  if (!body) return false;
 
-  if (!tp.originId) {
+  if (!body) {
+    // Click on empty space → clear everything
+    tp.originId = null;
+    tp.destinationId = null;
+    tp.lastPlan = null;
+    refreshTravelPanel(state);
+    return true;
+  }
+
+  if (body.id === tp.originId) {
+    // Click origin again → clear origin, promote destination if present
+    tp.originId = tp.destinationId;
+    tp.destinationId = null;
+  } else if (body.id === tp.destinationId) {
+    // Click destination again → clear destination only
+    tp.destinationId = null;
+  } else if (!tp.originId) {
     tp.originId = body.id;
-  } else if (!tp.destinationId && body.id !== tp.originId) {
+  } else if (!tp.destinationId) {
     tp.destinationId = body.id;
-  } else if (body.id === tp.originId || body.id === tp.destinationId) {
-    // Clicking already-selected body clears it
-    if (body.id === tp.originId) {
-      tp.originId = tp.destinationId;
-      tp.destinationId = null;
-    } else {
-      tp.destinationId = null;
-    }
   } else {
-    // Both filled; replace destination
+    // Both filled → replace destination
     tp.destinationId = body.id;
   }
 
-  // Refresh panel UI
-  const event = new Event('travel-selection-changed');
-  document.dispatchEvent(event);
-
+  refreshTravelPanel(state);
   return true;
 }
 
