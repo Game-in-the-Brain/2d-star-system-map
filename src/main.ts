@@ -1,4 +1,6 @@
+/// <reference types="vite-plugin-pwa/client" />
 import type { AppState, MapPayload, StarSystem } from './types';
+import { registerSW } from 'virtual:pwa-register';
 import { initRenderer, resizeCanvas } from './renderer';
 import { initUIControls } from './uiControls';
 import { buildSceneGraph } from './dataAdapter';
@@ -216,6 +218,8 @@ function initPasteControls(state: AppState): void {
 }
 
 function main() {
+  registerSW({ immediate: true });
+
   const canvas = document.getElementById('starmap') as HTMLCanvasElement | null;
   if (!canvas) {
     console.error('Canvas #starmap not found');

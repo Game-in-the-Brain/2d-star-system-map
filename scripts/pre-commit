@@ -1,0 +1,17 @@
+#!/bin/bash
+# Auto-increment version by 0.01 on every commit
+# Copy to .git/hooks/pre-commit and chmod +x to activate
+
+VERSION_FILE="VERSION"
+
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "1.00" > "$VERSION_FILE"
+fi
+
+CURRENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+NEW=$(awk "BEGIN {printf \"%.2f\", $CURRENT + 0.01}" < /dev/null)
+
+echo "$NEW" > "$VERSION_FILE"
+git add "$VERSION_FILE"
+
+echo "Version bumped: $CURRENT -> $NEW"
