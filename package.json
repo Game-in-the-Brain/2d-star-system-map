@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/reset-template.js && tsc -b && vite build && node scripts/inline-build.js",
+    "build": "tsc -b && vite build && node scripts/inline-build.js",
     "preview": "vite preview",
     "standalone": "node scripts/inline-build.js"
   },

@@ -1,6 +1,5 @@
 import type { MapPayload, SavedStarPage, StarSystem } from './types';
 import { APP_VERSION } from './version';
-import { STANDALONE_TEMPLATE } from './standaloneTemplate';
 
 /**
  * Generate a self-contained HTML snapshot of the current 2D map view.
@@ -161,25 +160,35 @@ export function exportToCsv(system: StarSystem): string {
 }
 
 /**
+ * Load the standalone HTML template from the server.
+ */
+async function loadStandaloneTemplate(): Promise<string> {
+  const res = await fetch('./standalone.html');
+  if (!res.ok) throw new Error(`Failed to load template: ${res.status}`);
+  return res.text();
+}
+
+/**
  * Generate a self-contained interactive HTML file with the full 2D map app inlined.
  * Works offline with all features: animation, zoom, pan, time controls, seed editor.
  */
-export function generateInteractiveHtml(payload: MapPayload, gmNotes: string): string {
+export async function generateInteractiveHtml(payload: MapPayload, gmNotes: string): Promise<string> {
   const starName = payload.starSystem.key || `${payload.starSystem.primaryStar.class}${payload.starSystem.primaryStar.grade}`;
-  const dateStr = new Date().toISOString();
+
+  const template = await loadStandaloneTemplate();
 
   // Inject the payload into the template
   const injectionScript = `<script>window.__MNEME_INITIAL_PAYLOAD__ = ${JSON.stringify(payload)};</script>`;
   const gmNotesScript = `<script>window.__MNEME_GM_NOTES__ = ${JSON.stringify(gmNotes)};</script>`;
 
   // Replace title
-  let html = STANDALONE_TEMPLATE;
+  let html = template;
   html = html.replace('<title>Mneme System Map</title>', `<title>${escapeHtml(starName)} — Mneme System Map</title>`);
 
-  // Inject payload before the first <script type="module">
-  const firstModuleScript = html.indexOf('<script type="module">');
-  if (firstModuleScript !== -1) {
-    html = html.slice(0, firstModuleScript) + injectionScript + '\n' + gmNotesScript + '\n' + html.slice(firstModuleScript);
+  // Inject payload before the first <script> (module or regular)
+  const firstScript = html.indexOf('<script>');
+  if (firstScript !== -1) {
+    html = html.slice(0, firstScript) + injectionScript + '\n' + gmNotesScript + '\n' + html.slice(firstScript);
   } else {
     // Fallback: inject before closing </head>
     html = html.replace('</head>', injectionScript + '\n' + gmNotesScript + '\n</head>');
@@ -191,8 +200,8 @@ export function generateInteractiveHtml(payload: MapPayload, gmNotes: string): s
 /**
  * Save an interactive animated map as a self-contained HTML file.
  */
-export function saveInteractivePage(payload: MapPayload, gmNotes: string, starId?: string): void {
-  const html = generateInteractiveHtml(payload, gmNotes);
+export async function saveInteractivePage(payload: MapPayload, gmNotes: string, starId?: string): Promise<void> {
+  const html = await generateInteractiveHtml(payload, gmNotes);
   const starName = payload.starSystem.key || `${payload.starSystem.primaryStar.class}${payload.starSystem.primaryStar.grade}`;
   const safeName = starName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'system';
 

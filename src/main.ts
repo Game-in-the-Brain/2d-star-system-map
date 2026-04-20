@@ -164,13 +164,13 @@ function initPasteControls(state: AppState): void {
   }
 
   if (btnExportInteractive) {
-    btnExportInteractive.addEventListener('click', () => {
+    btnExportInteractive.addEventListener('click', async () => {
       if (!currentPayload) {
         alert('No system loaded. Generate or paste a system first.');
         return;
       }
       const starId = currentPayload.starSystem.key || `generated-${Date.now()}`;
-      saveInteractivePage(currentPayload, state.gmNotes || '', starId);
+      await saveInteractivePage(currentPayload, state.gmNotes || '', starId);
     });
   }
 
