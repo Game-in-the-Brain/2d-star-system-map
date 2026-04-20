@@ -86,10 +86,11 @@ Departure        Optimistic     Pessimistic
 
 While the travel slider is active (has focus or is playing):
 
-1. **Spacecraft sprite** — a small arrow/chevron drawn at the interpolated position along the transfer line
-2. **Day counter** — label near the spacecraft: "Day 23 / 58"
-3. **Origin/destination rings** — remain visible
-4. **Transfer line** — solid in the travelled portion, dashed in the remaining portion
+1. **Fixed transfer chord** — a straight line from origin-at-departure to destination-at-arrival. This chord represents the ballistic intercept trajectory; it does NOT connect the planets' current orbital positions.
+2. **Spacecraft sprite** — a small arrow/chevron drawn at the interpolated position along the transfer chord
+3. **Day counter** — label near the spacecraft: "Day 23 / 58"
+4. **Origin/destination rings** — remain visible
+5. **Transfer line** — solid blue in the travelled portion, dashed in the remaining portion
 
 ---
 
@@ -121,7 +122,7 @@ export interface TravelPlannerState {
 
 ### 4.2 Computed Positions
 
-Given `travelDayOffset` and a `TravelPlan`, the spacecraft position is interpolated:
+Given `travelDayOffset` and a `TravelPlan`, the spacecraft position is interpolated along the **transfer chord** — the straight-line ballistic path from the origin's departure position to the destination's **future** arrival position:
 
 ```typescript
 function getSpacecraftPosition(
@@ -129,20 +130,21 @@ function getSpacecraftPosition(
   travelDayOffset: number,
   allBodies: SceneBody[]
 ): Point {
+  // Origin at the moment of departure (fixed)
   const originPos = getBodyPositionAU(
     originBody,
     plan.departureDayOffset,
     allBodies
   );
 
-  // Destination at departure + travelDayOffset
+  // Destination at the moment of arrival (fixed target)
   const destPos = getBodyPositionAU(
     destBody,
-    plan.departureDayOffset + travelDayOffset,
+    plan.departureDayOffset + plan.pessimisticArrivalDays,
     allBodies
   );
 
-  // Linear interpolation for display (ballistic arc is approximated as straight line)
+  // Linear interpolation along the transfer chord
   const t = travelDayOffset / plan.pessimisticArrivalDays;
   return {
     x: originPos.x + (destPos.x - originPos.x) * t,
@@ -151,7 +153,7 @@ function getSpacecraftPosition(
 }
 ```
 
-> **Note:** The true ballistic trajectory is a curved orbit. For v1 we linearly interpolate between origin-at-departure and destination-at-arrival. This is visually adequate for a GM tool and avoids heavy Lambert solver integration.
+> **Key insight:** The spacecraft does not chase the destination's *current* position. It aims at where the destination **will be** at arrival time and coasts ballistically toward that intercept point. The transfer line is therefore drawn from origin-at-departure → destination-at-arrival, and the spacecraft scrubs along that fixed chord.
 
 ---
 
@@ -224,18 +226,46 @@ function tick(now: number) {
 
 ### 6.3 Canvas Spacecraft Drawing
 
+The spacecraft is drawn along the **fixed transfer chord** (origin-at-departure → destination-at-arrival), not between the bodies' current orbital positions:
+
 ```typescript
-function drawSpacecraft(ctx, plan, travelDayOffset, frames, state) {
-  const originFrame = frames.get(plan.originId);
-  const destFrame = frames.get(plan.destinationId);
-  if (!originFrame || !destFrame) return;
+function drawSpacecraft(ctx, plan, travelDayOffset, allBodies, state) {
+  const origin = allBodies.find(b => b.id === plan.originId);
+  const dest = allBodies.find(b => b.id === plan.destinationId);
+  if (!origin || !dest) return;
+
+  // Compute fixed endpoints in AU-space
+  const originPosAU = getBodyPositionAU(origin, plan.departureDayOffset, allBodies);
+  const destPosAU = getBodyPositionAU(dest, plan.departureDayOffset + plan.pessimisticArrivalDays, allBodies);
+
+  // Convert to screen coordinates
+  const cx = state.width / 2;
+  const cy = state.height / 2;
+  const originScreen = worldToScreen(originPosAU, state.camera, cx, cy);
+  const destScreen = worldToScreen(destPosAU, state.camera, cx, cy);
 
   const t = travelDayOffset / plan.pessimisticArrivalDays;
-  const x = originFrame.x + (destFrame.x - originFrame.x) * t;
-  const y = originFrame.y + (destFrame.y - originFrame.y) * t;
+  const x = originScreen.x + (destScreen.x - originScreen.x) * t;
+  const y = originScreen.y + (destScreen.y - originScreen.y) * t;
 
-  // Small chevron pointing toward destination
-  const angle = Math.atan2(destFrame.y - originFrame.y, destFrame.x - originFrame.x);
+  // Transfer chord line (solid = travelled, dashed = remaining)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(96, 165, 250, 0.4)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(originScreen.x, originScreen.y);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(destScreen.x, destScreen.y);
+  ctx.stroke();
+  ctx.restore();
+
+  // Small chevron pointing toward destination-at-arrival
+  const angle = Math.atan2(destScreen.y - originScreen.y, destScreen.x - originScreen.x);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
