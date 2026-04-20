@@ -6,7 +6,7 @@ import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
 import { generateRandomSystem } from './generator';
 import { APP_FULL_VERSION } from './version';
-import { savePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
+import { savePage, saveInteractivePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
 import { initEditor, setEditorSystem } from './editor';
 
 let currentPayload: MapPayload | null = null;
@@ -109,6 +109,7 @@ function initPasteControls(state: AppState): void {
   const btnDownloadSystem = document.getElementById('btn-download-system') as HTMLButtonElement | null;
   const btnGenerateSystem = document.getElementById('btn-generate-system') as HTMLButtonElement | null;
   const btnSavePage = document.getElementById('btn-save-page') as HTMLButtonElement | null;
+  const btnExportInteractive = document.getElementById('btn-export-interactive') as HTMLButtonElement | null;
   const btnExportCsv = document.getElementById('btn-export-csv') as HTMLButtonElement | null;
   const btnExportDocx = document.getElementById('btn-export-docx') as HTMLButtonElement | null;
 
@@ -159,6 +160,17 @@ function initPasteControls(state: AppState): void {
       }
       const starId = currentPayload.starSystem.key || `generated-${Date.now()}`;
       savePage(state.canvas, currentPayload, state.gmNotes || '', starId);
+    });
+  }
+
+  if (btnExportInteractive) {
+    btnExportInteractive.addEventListener('click', () => {
+      if (!currentPayload) {
+        alert('No system loaded. Generate or paste a system first.');
+        return;
+      }
+      const starId = currentPayload.starSystem.key || `generated-${Date.now()}`;
+      saveInteractivePage(currentPayload, state.gmNotes || '', starId);
     });
   }
 
@@ -220,16 +232,29 @@ function main() {
   state.canvas = canvas;
   state.ctx = ctx;
 
-  // Check for starId param first (3D map cross-link)
-  const params = new URLSearchParams(window.location.search);
-  const starId = params.get('starId');
-  let urlPayload = decodeMapPayload(window.location.search);
+  // Check for injected payload first (standalone interactive export)
+  let urlPayload: MapPayload | null = null;
+  const injected = (window as unknown as Record<string, unknown>).__MNEME_INITIAL_PAYLOAD__;
+  if (injected && typeof injected === 'object') {
+    urlPayload = injected as MapPayload;
+    const injectedNotes = (window as unknown as Record<string, unknown>).__MNEME_GM_NOTES__;
+    if (typeof injectedNotes === 'string') {
+      state.gmNotes = injectedNotes;
+    }
+  }
 
-  if (starId && !urlPayload) {
-    const saved = loadSavedPage(starId);
-    if (saved) {
-      urlPayload = saved.payload;
-      state.gmNotes = saved.gmNotes || '';
+  // Fall back to URL params
+  if (!urlPayload) {
+    const params = new URLSearchParams(window.location.search);
+    const starId = params.get('starId');
+    urlPayload = decodeMapPayload(window.location.search);
+
+    if (starId && !urlPayload) {
+      const saved = loadSavedPage(starId);
+      if (saved) {
+        urlPayload = saved.payload;
+        state.gmNotes = saved.gmNotes || '';
+      }
     }
   }
 

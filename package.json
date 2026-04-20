@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build && node scripts/inline-build.js",
+    "preview": "vite preview",
+    "standalone": "node scripts/inline-build.js"
   },
   "devDependencies": {
     "typescript": "~5.8.0",

@@ -1,5 +1,6 @@
 import type { MapPayload, SavedStarPage, StarSystem } from './types';
 import { APP_VERSION } from './version';
+import { STANDALONE_TEMPLATE } from './standaloneTemplate';
 
 /**
  * Generate a self-contained HTML snapshot of the current 2D map view.
@@ -157,6 +158,67 @@ export function exportToCsv(system: StarSystem): string {
   rows.push(['Moons', String(system.moons?.length || 0)]);
   rows.push(['Disks', String(system.circumstellarDisks?.length || 0)]);
   return rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+
+/**
+ * Generate a self-contained interactive HTML file with the full 2D map app inlined.
+ * Works offline with all features: animation, zoom, pan, time controls, seed editor.
+ */
+export function generateInteractiveHtml(payload: MapPayload, gmNotes: string): string {
+  const starName = payload.starSystem.key || `${payload.starSystem.primaryStar.class}${payload.starSystem.primaryStar.grade}`;
+  const dateStr = new Date().toISOString();
+
+  // Inject the payload into the template
+  const injectionScript = `<script>window.__MNEME_INITIAL_PAYLOAD__ = ${JSON.stringify(payload)};</script>`;
+  const gmNotesScript = `<script>window.__MNEME_GM_NOTES__ = ${JSON.stringify(gmNotes)};</script>`;
+
+  // Replace title
+  let html = STANDALONE_TEMPLATE;
+  html = html.replace('<title>Mneme System Map</title>', `<title>${escapeHtml(starName)} — Mneme System Map</title>`);
+
+  // Inject payload before the first <script type="module">
+  const firstModuleScript = html.indexOf('<script type="module">');
+  if (firstModuleScript !== -1) {
+    html = html.slice(0, firstModuleScript) + injectionScript + '\n' + gmNotesScript + '\n' + html.slice(firstModuleScript);
+  } else {
+    // Fallback: inject before closing </head>
+    html = html.replace('</head>', injectionScript + '\n' + gmNotesScript + '\n</head>');
+  }
+
+  return html;
+}
+
+/**
+ * Save an interactive animated map as a self-contained HTML file.
+ */
+export function saveInteractivePage(payload: MapPayload, gmNotes: string, starId?: string): void {
+  const html = generateInteractiveHtml(payload, gmNotes);
+  const starName = payload.starSystem.key || `${payload.starSystem.primaryStar.class}${payload.starSystem.primaryStar.grade}`;
+  const safeName = starName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'system';
+
+  // Download HTML file
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mneme-interactive-${safeName}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  // Sync to shared localStorage for 3D map access
+  const id = starId || `generated-${Date.now()}`;
+  const savedPage: SavedStarPage = {
+    starId: id,
+    starName,
+    savedAt: new Date().toISOString(),
+    payload,
+    mwgSystem: payload.starSystem,
+    gmNotes,
+    version: APP_VERSION,
+  };
+  localStorage.setItem(`mneme-2dmap-${id}`, JSON.stringify(savedPage));
 }
 
 /**
