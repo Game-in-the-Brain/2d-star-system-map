@@ -10,6 +10,7 @@ import { generateRandomSystem } from './generator';
 import { APP_FULL_VERSION } from './version';
 import { savePage, saveInteractivePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
 import { initEditor, setEditorSystem } from './editor';
+import { initTravelPlanner, createTravelPlannerState } from './travelPlanner';
 
 let currentPayload: MapPayload | null = null;
 
@@ -69,6 +70,7 @@ function createDefaultState(): AppState {
     width: window.innerWidth,
     height: window.innerHeight,
     gmNotes: '',
+    travelPlanner: undefined,
   };
 }
 
@@ -309,6 +311,9 @@ function main() {
       localStorage.setItem(`mneme-2dmap-${starId}`, JSON.stringify(savedPage));
     }
   });
+
+  state.travelPlanner = createTravelPlannerState();
+  initTravelPlanner(state);
 
   // Render version in UI
   const versionDisplay = document.getElementById('version-display');

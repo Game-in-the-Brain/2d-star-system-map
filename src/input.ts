@@ -1,5 +1,6 @@
 import type { AppState } from './types';
 import { zoomTo, pan } from './camera';
+import { handleTravelPlannerClick, refreshTravelPanel } from './travelPlanner';
 
 export function initInputHandlers(state: AppState, onReset: () => void): void {
   const canvas = state.canvas!;
@@ -7,8 +8,11 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
 
   // Mouse drag state
   let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
   let lastMouseX = 0;
   let lastMouseY = 0;
+  const CLICK_THRESHOLD_PX = 4;
 
   // Touch state
   let lastTouches: TouchList | null = null;
@@ -55,6 +59,8 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
   canvas.addEventListener('mousedown', (e) => {
     isDragging = true;
     const pos = getMousePos(e);
+    dragStartX = pos.x;
+    dragStartY = pos.y;
     lastMouseX = pos.x;
     lastMouseY = pos.y;
   });
@@ -69,7 +75,19 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
     lastMouseY = pos.y;
   });
 
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('mouseup', (e) => {
+    if (isDragging) {
+      const dx = lastMouseX - dragStartX;
+      const dy = lastMouseY - dragStartY;
+      if (Math.hypot(dx, dy) < CLICK_THRESHOLD_PX) {
+        // Treat as click
+        const pos = getMousePos(e);
+        if (handleTravelPlannerClick(pos.x, pos.y, state)) {
+          // Travel planner consumed the click; refresh panel
+          refreshTravelPanel(state);
+        }
+      }
+    }
     isDragging = false;
   });
 

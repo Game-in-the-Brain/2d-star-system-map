@@ -278,6 +278,8 @@ btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromC
 |------|--------|
 | 2026-04-15 | Extracted from `Mneme-CE-World-Generator` monorepo into standalone repo to eliminate BASE_URL routing bugs (QA-033). |
 | 2026-04-19 | §8 Sector-Hosted Mode added — consumer spec for MWG FR-045 SectorFiles hosted by the 3D Interstellar Map (FR-011..014). |
+| 2026-04-20 | FRD-047: PWA — Progressive Web App with offline service worker, manifest, and icons. |
+| 2026-04-20 | FRD-048: Delta-V Calculator & Orbital Travel Planner — interplanetary travel time calculator with optimistic/pessimistic bounds. |
 
 ---
 

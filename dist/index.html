@@ -11,9 +11,9 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-CkiCQK4e.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-CRH6W9yt.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
-    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Do4T5jkN.css">
+    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-BruvfWfs.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
   <body>
     <div id="app">
@@ -28,6 +28,7 @@
         <div class="tabs">
           <button class="tab-btn active" data-tab="map">Map</button>
           <button class="tab-btn" data-tab="editor">System Editor</button>
+          <button class="tab-btn" data-tab="travel">Travel Planner</button>
         </div>
 
         <!-- Map Tab -->
@@ -127,6 +128,70 @@
             <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
               <button id="btn-export-csv" class="btn small" style="flex: 1;">Export CSV</button>
               <button id="btn-export-docx" class="btn small" style="flex: 1; margin-left: 4px;">Export DOCX</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Travel Planner Tab -->
+        <div id="tab-travel" class="tab-panel">
+          <div id="travel-empty" class="travel-empty">Select an origin and destination on the map to plan a journey.</div>
+          <div id="travel-form" class="travel-form" style="display:none;">
+            <div class="travel-section">
+              <label>Origin</label>
+              <div id="travel-origin" class="travel-body-tag">—</div>
+            </div>
+            <div class="travel-section">
+              <label>Destination</label>
+              <div id="travel-destination" class="travel-body-tag">—</div>
+            </div>
+            <div class="travel-section">
+              <label for="travel-delta-v">Spacecraft Delta-V (km/s)</label>
+              <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
+            </div>
+            <div class="travel-section">
+              <label>
+                <input id="travel-use-sim-date" type="checkbox" checked />
+                Use current simulation date
+              </label>
+              <input id="travel-departure-date" type="date" style="display:none;" />
+            </div>
+            <div class="control-row">
+              <button id="btn-calculate-transfer" class="btn" style="width: 100%;">🚀 Calculate Transfer</button>
+            </div>
+            <div class="control-row">
+              <button id="btn-clear-travel" class="btn small" style="width: 100%;">Clear Selection</button>
+            </div>
+            <div id="travel-results" class="travel-results" style="display:none;">
+              <div class="travel-result-row">
+                <span class="travel-result-label">Escape Origin:</span>
+                <span id="res-escape-origin" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Capture Dest:</span>
+                <span id="res-capture-dest" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Excess ΔV:</span>
+                <span id="res-excess-dv" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row divider"></div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Optimistic:</span>
+                <span id="res-optimistic" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Likely:</span>
+                <span id="res-likely" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Pessimistic:</span>
+                <span id="res-pessimistic" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row divider"></div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Next Window:</span>
+                <span id="res-next-window" class="travel-result-value">—</span>
+              </div>
             </div>
           </div>
         </div>

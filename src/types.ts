@@ -150,6 +150,8 @@ export interface AppState {
   zones?: ZoneBoundaries;
   /** GM notes for this system (FRD-046) */
   gmNotes?: string;
+  /** Travel planner state (FRD-048) */
+  travelPlanner?: TravelPlannerState;
 }
 
 // FRD-046: Saved star page format
@@ -161,4 +163,30 @@ export interface SavedStarPage {
   mwgSystem?: StarSystem;
   gmNotes: string;
   version: string;
+}
+
+// FRD-048: Travel Planner
+export interface TravelPlan {
+  originId: string;
+  destinationId: string;
+  departureDayOffset: number;
+  deltaVBudgetKms: number;
+  escapeOriginKms: number;
+  captureDestKms: number;
+  excessDeltaVKms: number;
+  optimisticArrivalDays: number;
+  pessimisticArrivalDays: number;
+  synodicPeriodDays: number;
+  nextWindowDayOffset: number;
+  isPossible: boolean;
+}
+
+export interface TravelPlannerState {
+  originId: string | null;
+  destinationId: string | null;
+  deltaVBudget: number;
+  useSimDate: boolean;
+  customDepartureDayOffset: number;
+  lastPlan: TravelPlan | null;
+  isActive: boolean;
 }

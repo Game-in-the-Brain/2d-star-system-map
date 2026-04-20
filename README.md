@@ -56,6 +56,9 @@ The app is a plain Vite + TypeScript project with no React dependencies.
 - **`src/renderer.ts`** — Canvas RAF render loop
 - **`src/camera.ts`** — Pan/zoom transforms
 - **`src/input.ts`** — Mouse drag, wheel zoom, touch pinch/pan
-- **`src/orbitMath.ts`** — Kepler period, angle offsets
+- **`src/orbitMath.ts`** — Kepler period, angle offsets, orbital velocity
 - **`src/starfield.ts`** — Mulberry32 PRNG, procedural background
 - **`src/uiControls.ts`** — Play/pause, speed, step buttons, seed controls
+- **`src/travelPhysics.ts`** — Escape velocity, transfer time calculator (FRD-048)
+- **`src/travelPlanner.ts`** — Travel Planner UI & canvas selection mode (FRD-048)
+- **`src/travelRenderer.ts`** — Trajectory arc & ship animation overlay (FRD-048)
