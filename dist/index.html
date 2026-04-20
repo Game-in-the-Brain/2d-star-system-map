@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Mneme System Map</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-asw5bHvc.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-CRWWFQRQ.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Do4T5jkN.css">
   </head>
@@ -73,6 +73,13 @@
           <div class="control-row">
             <button id="btn-export-interactive" class="btn" style="width: 100%;">🎬 Export Interactive Map</button>
           </div>
+          <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+            <textarea id="system-paste" placeholder="Paste system JSON from MWG…" rows="3" style="width: 100%; font-family: monospace; font-size: 10px; resize: vertical;"></textarea>
+          </div>
+          <div class="control-row">
+            <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
+            <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
+          </div>
         </div>
 
         <!-- System Editor Tab -->
@@ -112,13 +119,6 @@
               <textarea id="edit-gm-notes" rows="4" placeholder="Add your notes here…"></textarea>
             </div>
             <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
-              <textarea id="system-paste" placeholder="Paste system JSON from MWG…" rows="3" style="width: 100%; font-family: monospace; font-size: 10px; resize: vertical;"></textarea>
-            </div>
-            <div class="control-row">
-              <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
-              <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
-            </div>
-            <div class="control-row" style="margin-top: 4px;">
               <button id="btn-export-csv" class="btn small" style="flex: 1;">Export CSV</button>
               <button id="btn-export-docx" class="btn small" style="flex: 1; margin-left: 4px;">Export DOCX</button>
             </div>
