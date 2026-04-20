@@ -15,57 +15,111 @@
         <div class="panel-header">
           <button id="btn-collapse-panel" class="btn panel-toggle" aria-label="Close controls" title="Close controls">✕</button>
         </div>
-        <div class="control-row">
-          <a href="https://game-in-the-brain.github.io/Mneme-CE-World-Generator/" target="_blank" rel="noopener noreferrer" class="btn small" style="width: 100%; text-decoration: none; display: inline-block; text-align: center;">🌍 Generate Worlds →</a>
+
+        <!-- Tabs -->
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="map">Map</button>
+          <button class="tab-btn" data-tab="editor">System Editor</button>
         </div>
-        <div class="control-row">
-          <button id="btn-play" class="btn" aria-label="Play">▶</button>
-          <button id="btn-pause" class="btn" aria-label="Pause" style="display:none">⏸</button>
-          <button id="btn-reverse" class="btn" aria-label="Reverse">⏮</button>
-          <select id="speed-select" class="btn" title="Simulation speed">
-            <option value="0.25">0.25×</option>
-            <option value="0.5">0.5×</option>
-            <option value="1" selected>1×</option>
-            <option value="2">2×</option>
-            <option value="5">5×</option>
-            <option value="10">10×</option>
-            <option value="30">30×</option>
-            <option value="365">365×</option>
-          </select>
+
+        <!-- Map Tab -->
+        <div id="tab-map" class="tab-panel active">
+          <div class="control-row">
+            <a href="https://game-in-the-brain.github.io/Mneme-CE-World-Generator/" target="_blank" rel="noopener noreferrer" class="btn small" style="width: 100%; text-decoration: none; display: inline-block; text-align: center;">🌍 Generate Worlds →</a>
+          </div>
+          <div class="control-row">
+            <button id="btn-play" class="btn" aria-label="Play">▶</button>
+            <button id="btn-pause" class="btn" aria-label="Pause" style="display:none">⏸</button>
+            <button id="btn-reverse" class="btn" aria-label="Reverse">⏮</button>
+            <select id="speed-select" class="btn" title="Simulation speed">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="5">5×</option>
+              <option value="10">10×</option>
+              <option value="30">30×</option>
+              <option value="365">365×</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <button id="btn-step-minus-7" class="btn small">-7d</button>
+            <button id="btn-step-minus-1" class="btn small">-1d</button>
+            <button id="btn-step-plus-1" class="btn small">+1d</button>
+            <button id="btn-step-plus-7" class="btn small">+7d</button>
+            <button id="btn-reset" class="btn small">Reset Time</button>
+          </div>
+          <div class="control-row">
+            <button id="btn-reset-view" class="btn small">Reset View</button>
+          </div>
+          <div class="control-row info">
+            <span id="date-display">2300-01-01</span>
+          </div>
+          <div class="control-row seed-row">
+            <label for="seed-display">Seed:</label>
+            <input id="seed-display" type="text" readonly value="--------" />
+            <button id="btn-seed-regen" class="btn small" title="New seed">🎲</button>
+            <button id="btn-seed-copy" class="btn small" title="Copy seed">📋</button>
+          </div>
+          <div class="control-row seed-row">
+            <input id="seed-paste" type="text" placeholder="Paste seed…" maxlength="8" />
+            <button id="btn-seed-apply" class="btn small">Apply</button>
+          </div>
+          <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+            <button id="btn-save-page" class="btn" style="width: 100%;">💾 Save Page</button>
+          </div>
         </div>
-        <div class="control-row">
-          <button id="btn-step-minus-7" class="btn small">-7d</button>
-          <button id="btn-step-minus-1" class="btn small">-1d</button>
-          <button id="btn-step-plus-1" class="btn small">+1d</button>
-          <button id="btn-step-plus-7" class="btn small">+7d</button>
-          <button id="btn-reset" class="btn small">Reset Time</button>
+
+        <!-- System Editor Tab -->
+        <div id="tab-editor" class="tab-panel">
+          <div id="editor-empty" class="editor-empty">Load a system to edit its data.</div>
+          <div id="editor-form" class="editor-form" style="display:none;">
+            <div class="editor-section">
+              <label>System Name</label>
+              <input id="edit-name" type="text" placeholder="Unnamed System" />
+            </div>
+            <div class="editor-section">
+              <label>Primary Star</label>
+              <div class="editor-row">
+                <select id="edit-star-class">
+                  <option value="O">O</option><option value="B">B</option><option value="A">A</option>
+                  <option value="F">F</option><option value="G">G</option><option value="K">K</option>
+                  <option value="M">M</option>
+                </select>
+                <select id="edit-star-grade">
+                  <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+                  <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+                  <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                  <option value="9">9</option>
+                </select>
+              </div>
+            </div>
+            <div class="editor-section">
+              <label>Main World</label>
+              <select id="edit-world-type">
+                <option value="Terrestrial">Terrestrial</option>
+                <option value="Dwarf">Dwarf</option>
+                <option value="Ice World">Ice World</option>
+              </select>
+            </div>
+            <div class="editor-section">
+              <label>GM Notes</label>
+              <textarea id="edit-gm-notes" rows="4" placeholder="Add your notes here…"></textarea>
+            </div>
+            <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+              <textarea id="system-paste" placeholder="Paste system JSON from MWG…" rows="3" style="width: 100%; font-family: monospace; font-size: 10px; resize: vertical;"></textarea>
+            </div>
+            <div class="control-row">
+              <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
+              <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
+            </div>
+            <div class="control-row" style="margin-top: 4px;">
+              <button id="btn-export-csv" class="btn small" style="flex: 1;">Export CSV</button>
+              <button id="btn-export-docx" class="btn small" style="flex: 1; margin-left: 4px;">Export DOCX</button>
+            </div>
+          </div>
         </div>
-        <div class="control-row">
-          <button id="btn-reset-view" class="btn small">Reset View</button>
-        </div>
-        <div class="control-row info">
-          <span id="date-display">2300-01-01</span>
-        </div>
-        <div class="control-row seed-row">
-          <label for="seed-display">Seed:</label>
-          <input id="seed-display" type="text" readonly value="--------" />
-          <button id="btn-seed-regen" class="btn small" title="New seed">🎲</button>
-          <button id="btn-seed-copy" class="btn small" title="Copy seed">📋</button>
-        </div>
-        <div class="control-row seed-row">
-          <input id="seed-paste" type="text" placeholder="Paste seed…" maxlength="8" />
-          <button id="btn-seed-apply" class="btn small">Apply</button>
-        </div>
-        <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
-          <button id="btn-generate-system" class="btn" style="width: 100%;">🎲 Generate Random System</button>
-        </div>
-        <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
-          <textarea id="system-paste" placeholder="Paste system JSON from MWG…" rows="3" style="width: 100%; font-family: monospace; font-size: 10px; resize: vertical;"></textarea>
-        </div>
-        <div class="control-row">
-          <button id="btn-load-system" class="btn small" style="flex: 1;">Load System</button>
-          <button id="btn-download-system" class="btn small" style="flex: 1; margin-left: 4px;">Download JSON</button>
-        </div>
+
         <div class="version-footer">
           <span id="version-display" title="Version">—</span>
         </div>

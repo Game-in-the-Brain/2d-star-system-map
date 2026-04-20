@@ -124,4 +124,5 @@ The rebuilt `dist/` will produce the same version string (assuming the working t
 
 | Date | Version | Note |
 |---|---|---|
+| 2026-04-20 | 1.1.x | FRD-046: Save Page + System Editor (M1-M2) |
 | 2026-04-18 | 1.0.9-90c9a31 | Versioning system introduced |

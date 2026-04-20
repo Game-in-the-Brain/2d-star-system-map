@@ -148,4 +148,17 @@ export interface AppState {
   width: number;
   height: number;
   zones?: ZoneBoundaries;
+  /** GM notes for this system (FRD-046) */
+  gmNotes?: string;
+}
+
+// FRD-046: Saved star page format
+export interface SavedStarPage {
+  starId: string;
+  starName: string;
+  savedAt: string;
+  payload: MapPayload;
+  mwgSystem?: StarSystem;
+  gmNotes: string;
+  version: string;
 }

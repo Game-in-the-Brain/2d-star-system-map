@@ -11,10 +11,10 @@ function getGitVersion() {
     const suffix = dirty ? '-dirty' : ''
 
     return {
-      version: `1.0.${commitCount}${suffix}`,
+      version: `1.1.${commitCount}${suffix}`,
       commitHash,
       commitDate,
-      fullVersion: `1.0.${commitCount}-${commitHash}${suffix}`,
+      fullVersion: `1.1.${commitCount}-${commitHash}${suffix}`,
     }
   } catch {
     return {

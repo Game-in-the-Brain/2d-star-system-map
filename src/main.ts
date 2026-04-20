@@ -6,6 +6,8 @@ import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
 import { generateRandomSystem } from './generator';
 import { APP_FULL_VERSION } from './version';
+import { savePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
+import { initEditor, setEditorSystem } from './editor';
 
 let currentPayload: MapPayload | null = null;
 
@@ -64,6 +66,7 @@ function createDefaultState(): AppState {
     lastFrameTime: performance.now(),
     width: window.innerWidth,
     height: window.innerHeight,
+    gmNotes: '',
   };
 }
 
@@ -95,6 +98,9 @@ function loadSystemIntoState(state: AppState, payload: MapPayload): void {
   resetCamera(state.camera, state.width, state.height, maxAU);
   (state as unknown as Record<string, () => void>).initCamera?.();
   (state as unknown as Record<string, () => void>).updateStarfield?.();
+
+  // Update editor
+  setEditorSystem(payload.starSystem, state.gmNotes || '');
 }
 
 function initPasteControls(state: AppState): void {
@@ -102,6 +108,9 @@ function initPasteControls(state: AppState): void {
   const btnLoadSystem = document.getElementById('btn-load-system') as HTMLButtonElement | null;
   const btnDownloadSystem = document.getElementById('btn-download-system') as HTMLButtonElement | null;
   const btnGenerateSystem = document.getElementById('btn-generate-system') as HTMLButtonElement | null;
+  const btnSavePage = document.getElementById('btn-save-page') as HTMLButtonElement | null;
+  const btnExportCsv = document.getElementById('btn-export-csv') as HTMLButtonElement | null;
+  const btnExportDocx = document.getElementById('btn-export-docx') as HTMLButtonElement | null;
 
   if (btnGenerateSystem) {
     btnGenerateSystem.addEventListener('click', () => {
@@ -141,6 +150,57 @@ function initPasteControls(state: AppState): void {
       URL.revokeObjectURL(url);
     });
   }
+
+  if (btnSavePage) {
+    btnSavePage.addEventListener('click', () => {
+      if (!state.canvas || !currentPayload) {
+        alert('No system loaded. Generate or paste a system first.');
+        return;
+      }
+      const starId = currentPayload.starSystem.key || `generated-${Date.now()}`;
+      savePage(state.canvas, currentPayload, state.gmNotes || '', starId);
+    });
+  }
+
+  if (btnExportCsv) {
+    btnExportCsv.addEventListener('click', () => {
+      if (!currentPayload) {
+        alert('No system loaded.');
+        return;
+      }
+      const csv = exportToCsv(currentPayload.starSystem);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const name = currentPayload.starSystem.key || `${currentPayload.starSystem.primaryStar.class}${currentPayload.starSystem.primaryStar.grade}`;
+      a.href = url;
+      a.download = `mneme-${name.replace(/\s+/g, '_').toLowerCase()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  if (btnExportDocx) {
+    btnExportDocx.addEventListener('click', () => {
+      if (!currentPayload) {
+        alert('No system loaded.');
+        return;
+      }
+      const html = exportToDocx(currentPayload.starSystem);
+      const blob = new Blob([html], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const name = currentPayload.starSystem.key || `${currentPayload.starSystem.primaryStar.class}${currentPayload.starSystem.primaryStar.grade}`;
+      a.href = url;
+      a.download = `mneme-${name.replace(/\s+/g, '_').toLowerCase()}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
 }
 
 function main() {
@@ -156,10 +216,22 @@ function main() {
     return;
   }
 
-  const urlPayload = decodeMapPayload(window.location.search);
   const state = createDefaultState();
   state.canvas = canvas;
   state.ctx = ctx;
+
+  // Check for starId param first (3D map cross-link)
+  const params = new URLSearchParams(window.location.search);
+  const starId = params.get('starId');
+  let urlPayload = decodeMapPayload(window.location.search);
+
+  if (starId && !urlPayload) {
+    const saved = loadSavedPage(starId);
+    if (saved) {
+      urlPayload = saved.payload;
+      state.gmNotes = saved.gmNotes || '';
+    }
+  }
 
   if (urlPayload) {
     currentPayload = urlPayload;
@@ -188,6 +260,26 @@ function main() {
   initInputHandlers(state, resetView);
   initRenderer(state);
   initPasteControls(state);
+  initEditor(state, (system, gmNotes) => {
+    state.gmNotes = gmNotes;
+    if (currentPayload) {
+      currentPayload.starSystem = system;
+    }
+    // Auto-save to localStorage for persistence
+    if (currentPayload) {
+      const starId = currentPayload.starSystem.key || `generated-${currentPayload.starfieldSeed}`;
+      const savedPage = {
+        starId,
+        starName: currentPayload.starSystem.key || `${currentPayload.starSystem.primaryStar.class}${currentPayload.starSystem.primaryStar.grade}`,
+        savedAt: new Date().toISOString(),
+        payload: currentPayload,
+        mwgSystem: currentPayload.starSystem,
+        gmNotes,
+        version: APP_FULL_VERSION.split(' ')[0] || 'dev',
+      };
+      localStorage.setItem(`mneme-2dmap-${starId}`, JSON.stringify(savedPage));
+    }
+  });
 
   // Render version in UI
   const versionDisplay = document.getElementById('version-display');

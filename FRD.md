@@ -277,3 +277,67 @@ btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromC
 | Date | Change |
 |------|--------|
 | 2026-04-15 | Extracted from `Mneme-CE-World-Generator` monorepo into standalone repo to eliminate BASE_URL routing bugs (QA-033). |
+| 2026-04-19 | §8 Sector-Hosted Mode added — consumer spec for MWG FR-045 SectorFiles hosted by the 3D Interstellar Map (FR-011..014). |
+
+---
+
+## 8. Sector-Hosted Mode (Planned)
+
+**Status:** 📋 Planned
+**Companion specs:** `Mneme-CE-World-Generator/…FRD.md` §14.6 FR-045; `3d-interstellar-map/frd.md` §FR-011..014.
+
+Today this app is URL-driven: MWG encodes a single `StarSystem` into `?system=<base64>` and opens the map. When a sector is loaded into the 3D Interstellar Map (which owns sector persistence), this app must also be able to render a system **by reference** — without the full StarSystem needing to fit in a URL.
+
+### 8.1 Two Input Modes (both must work)
+
+| Mode | URL shape | Source | When used |
+|------|-----------|--------|-----------|
+| **Payload mode** (existing, preserved) | `?system=<base64>` | MWG single-world button, test harness | Still the fallback. Must not regress. |
+| **Sector-host mode** (new) | `?sector=<sectorId>&starId=<starId>` | 3D Interstellar Map click-through | Used when a sector is hosted in IndexedDB and both apps share origin. |
+
+### 8.2 Sector-Host Resolver
+
+On boot, if `?sector=` and `?starId=` are present:
+
+1. Open IndexedDB `gi7b_sectors` (same schema the 3D map writes — FR-013).
+2. Read `systems` object store at key `${sectorId}:${starId}`.
+3. If the record exists, construct a `MapPayload` on the fly:
+   ```ts
+   const payload: MapPayload = {
+     starSystem: record.starSystem,
+     starfieldSeed: record.generationLog.seed,         // reuse per-system seed for deterministic starfield
+     epoch: deriveEpochFromSectorAge(record.sectorAge) // mapping: SectorAge.year → epoch.year
+   };
+   ```
+4. Feed it into the existing `buildSceneGraph()` pipeline unchanged.
+5. If the record is missing, IDB is unavailable, or the origin isn't shared, show a clear error with "Back to 3D Map" and "Retry with ?system=" guidance. Do **not** silently blank.
+
+### 8.3 New Files / Changes
+
+| File | Change |
+|------|--------|
+| `src/sectorHost.ts` | NEW — IndexedDB read helper: `loadSystemFromHost(sectorId, starId): Promise<MapPayload \| null>`. No writes — this app is read-only from the host. |
+| `src/main.ts` | Branch in `decodeMapPayload()`: try `?sector=/?starId=` first, fall back to `?system=`. |
+| `src/types.ts` | Import `SectorSystemRecord` / `SectorAge` type shapes (copied from MWG until a shared package exists). |
+| `src/uiControls.ts` | "Back to Sector Map (3D)" button visible only when entered via sector-host mode — builds `3d-interstellar-map/?sectorId=<id>` URL. |
+
+### 8.4 Encoding Contract — Still Authoritative
+
+The Unicode-safe Base64 codec in §"Encoding contract" still governs payload mode. Sector-host mode **does not** use Base64 — it reads structured data from IndexedDB directly. Do not apply Base64 on the sector path.
+
+### 8.5 Read-Only Guarantee
+
+This app remains a pure viewer. It **must not** write to the `gi7b_sectors` IndexedDB. All edits happen in MWG; the 3D map is the only writer. If the user wants to edit, the "Open in MWG" button (new, appears in sector-host mode) launches MWG with `?mode=edit&sector=<sectorId>&starId=<starId>`.
+
+### 8.6 Acceptance Criteria
+
+- [ ] Existing `?system=<base64>` flow from MWG's "View System Map" button and from `test.html` continues to work byte-identically (regression test with a saved URL).
+- [ ] Visiting `?sector=<id>&starId=<id>` after the 3D map has persisted a sector renders the matching system in < 500 ms.
+- [ ] With IndexedDB disabled (private mode), `?sector=` mode falls back to an error screen with a "Reopen via URL-encoded payload" instruction; no blank canvas.
+- [ ] "Open in MWG" button only appears when entered via sector-host mode.
+- [ ] The starfield seed comes from `record.generationLog.seed` in sector-host mode — starfield is reproducible per system rather than per-session.
+
+### 8.7 Open Questions
+
+- Cross-origin handoff: if the 3D map is deployed to a different host later, IndexedDB isolation breaks this flow. Proposed v1.1: the 3D map exposes a `postMessage` "system:request" listener; this app opens the 3D map URL invisibly, requests the record, and resolves. For v1 we rely on the shared `game-in-the-brain.github.io` origin.
+- Offline-first: should the 2D map cache the last-viewed sector record in its own storage so it works offline after the first visit? Deferred — the 3D map's IndexedDB already serves that role when the user reloads.

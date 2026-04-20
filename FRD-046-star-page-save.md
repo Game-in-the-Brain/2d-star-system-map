@@ -172,19 +172,19 @@ Value: SavedStarPage (JSON or HTML string)
 
 ## 7. Acceptance Criteria
 
-- [ ] "Save Page" button downloads self-contained HTML
-- [ ] Saved HTML renders the star correctly offline
-- [ ] Saved HTML includes MWG data if present
-- [ ] Saved page syncs to shared storage for 3D map access
-- [ ] "System Editor" tab appears when MWG data loaded
-- [ ] Editor allows renaming star and world
-- [ ] Editor allows editing dropdown fields (class, grade, type, etc.)
-- [ ] Editor has GM notes free-text area
-- [ ] Export to DOCX works
-- [ ] Export to CSV works
-- [ ] Export to JSON works
-- [ ] Changes persist to localStorage
-- [ ] Build passes zero TypeScript errors
+- [x] "Save Page" button downloads self-contained HTML
+- [x] Saved HTML renders the star correctly offline
+- [x] Saved HTML includes MWG data if present
+- [x] Saved page syncs to shared storage for 3D map access
+- [x] "System Editor" tab appears when MWG data loaded
+- [x] Editor allows renaming star and world
+- [x] Editor allows editing dropdown fields (class, grade, type, etc.)
+- [x] Editor has GM notes free-text area
+- [x] Export to DOCX works
+- [x] Export to CSV works
+- [x] Export to JSON works
+- [x] Changes persist to localStorage
+- [x] Build passes zero TypeScript errors
 
 ---
 
