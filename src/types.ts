@@ -179,6 +179,9 @@ export interface TravelPlan {
   synodicPeriodDays: number;
   nextWindowDayOffset: number;
   isPossible: boolean;
+  minDistanceAU: number;
+  maxDistanceAU: number;
+  failureReason: string | null;
 }
 
 export interface TravelPlannerState {

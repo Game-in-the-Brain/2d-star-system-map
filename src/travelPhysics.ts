@@ -185,6 +185,30 @@ export function findArrivalWindow(
 }
 
 /**
+ * Compute the minimum and maximum distance between two bodies over one synodic period.
+ */
+export function computeMinMaxDistanceAU(
+  origin: SceneBody,
+  destination: SceneBody,
+  allBodies: SceneBody[]
+): { min: number; max: number } {
+  const synodic = calculateSynodicPeriodDays(origin.periodDays, destination.periodDays);
+  const searchDays = Math.min(Math.ceil(synodic) || 365, 3650);
+  let minDist = Infinity;
+  let maxDist = 0;
+
+  for (let day = 0; day <= searchDays; day++) {
+    const oPos = getBodyPositionAU(origin, day, allBodies);
+    const dPos = getBodyPositionAU(destination, day, allBodies);
+    const dist = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
+    minDist = Math.min(minDist, dist);
+    maxDist = Math.max(maxDist, dist);
+  }
+
+  return { min: minDist, max: maxDist };
+}
+
+/**
  * Build a complete TravelPlan from user inputs.
  */
 export function buildTravelPlan(
@@ -200,6 +224,12 @@ export function buildTravelPlan(
   const escapeOriginKms = calculateEscapeVelocityKms(origin.mass, originRadiusKm);
   const captureDestKms = calculateEscapeVelocityKms(destination.mass, destRadiusKm);
   const excessDeltaVKms = Math.round((deltaVBudgetKms - escapeOriginKms - captureDestKms) * 100) / 100;
+
+  const { min: minDistanceAU, max: maxDistanceAU } = computeMinMaxDistanceAU(
+    origin,
+    destination,
+    allBodies
+  );
 
   const synodicPeriodDays = calculateSynodicPeriodDays(origin.periodDays, destination.periodDays);
   const nextWindowDayOffset = findNextWindowDayOffset(
@@ -220,6 +250,16 @@ export function buildTravelPlan(
         )
       : null;
 
+  let failureReason: string | null = null;
+  if (deltaVBudgetKms < escapeOriginKms) {
+    failureReason = `Cannot escape ${origin.label}. Need ${escapeOriginKms} km/s, have ${deltaVBudgetKms} km/s.`;
+  } else if (deltaVBudgetKms < escapeOriginKms + captureDestKms) {
+    const remaining = Math.round((deltaVBudgetKms - escapeOriginKms) * 100) / 100;
+    failureReason = `Can escape origin (${escapeOriginKms} km/s) but cannot capture at ${destination.label}. Need ${captureDestKms} km/s, only ${remaining} km/s remaining.`;
+  } else if (!window) {
+    failureReason = `Excess ΔV (${excessDeltaVKms} km/s) too low to reach ${destination.label} within 10 years.`;
+  }
+
   return {
     originId: origin.id,
     destinationId: destination.id,
@@ -233,5 +273,8 @@ export function buildTravelPlan(
     synodicPeriodDays,
     nextWindowDayOffset,
     isPossible: excessDeltaVKms > 0 && window !== null,
+    minDistanceAU,
+    maxDistanceAU,
+    failureReason,
   };
 }

@@ -1,5 +1,5 @@
 import type { AppState, SceneBody, TravelPlan, TravelPlannerState, Point } from './types';
-import { buildTravelPlan } from './travelPhysics';
+import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './travelPhysics';
 import { logScaleDistance } from './camera';
 
 
@@ -127,7 +127,21 @@ export function initTravelPlanner(state: AppState): void {
   const btnClear = document.getElementById('btn-clear-travel') as HTMLButtonElement | null;
   const travelResults = document.getElementById('travel-results');
 
+  // Simulation controls
+  const btnTravelPlay = document.getElementById('btn-travel-play') as HTMLButtonElement | null;
+  const btnTravelPause = document.getElementById('btn-travel-pause') as HTMLButtonElement | null;
+  const btnTravelReverse = document.getElementById('btn-travel-reverse') as HTMLButtonElement | null;
+  const travelSpeedSelect = document.getElementById('travel-speed-select') as HTMLSelectElement | null;
+  const btnTravelStepMinus7 = document.getElementById('btn-travel-step-minus-7') as HTMLButtonElement | null;
+  const btnTravelStepMinus1 = document.getElementById('btn-travel-step-minus-1') as HTMLButtonElement | null;
+  const btnTravelStepPlus1 = document.getElementById('btn-travel-step-plus-1') as HTMLButtonElement | null;
+  const btnTravelStepPlus7 = document.getElementById('btn-travel-step-plus-7') as HTMLButtonElement | null;
+  const btnTravelReset = document.getElementById('btn-travel-reset') as HTMLButtonElement | null;
+
   // Result fields
+  const resCurrentDist = document.getElementById('res-current-dist');
+  const resMinDist = document.getElementById('res-min-dist');
+  const resMaxDist = document.getElementById('res-max-dist');
   const resEscapeOrigin = document.getElementById('res-escape-origin');
   const resCaptureDest = document.getElementById('res-capture-dest');
   const resExcessDv = document.getElementById('res-excess-dv');
@@ -135,6 +149,7 @@ export function initTravelPlanner(state: AppState): void {
   const resLikely = document.getElementById('res-likely');
   const resPessimistic = document.getElementById('res-pessimistic');
   const resNextWindow = document.getElementById('res-next-window');
+  const resFailureReason = document.getElementById('res-failure-reason');
 
   function updatePanel() {
     const hasOrigin = tp.originId !== null;
@@ -166,6 +181,22 @@ export function initTravelPlanner(state: AppState): void {
     return `${Math.round(days)}d`;
   }
 
+  function updateDistanceContext() {
+    if (!tp.originId || !tp.destinationId) return;
+    const origin = state.bodies.find((b) => b.id === tp.originId);
+    const destination = state.bodies.find((b) => b.id === tp.destinationId);
+    if (!origin || !destination) return;
+
+    const oPos = getBodyPositionAU(origin, state.simDayOffset, state.bodies);
+    const dPos = getBodyPositionAU(destination, state.simDayOffset, state.bodies);
+    const currentDist = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
+    if (resCurrentDist) resCurrentDist.textContent = `${currentDist.toFixed(2)} AU`;
+
+    const { min, max } = computeMinMaxDistanceAU(origin, destination, state.bodies);
+    if (resMinDist) resMinDist.textContent = `${min.toFixed(2)} AU`;
+    if (resMaxDist) resMaxDist.textContent = `${max.toFixed(2)} AU`;
+  }
+
   function displayResults(plan: TravelPlan) {
     if (!travelResults) return;
     travelResults.style.display = 'flex';
@@ -193,6 +224,16 @@ export function initTravelPlanner(state: AppState): void {
       const windowDate = new Date(state.epochDate.getTime() + plan.nextWindowDayOffset * 86400000);
       resNextWindow.textContent = windowDate.toISOString().split('T')[0];
     }
+    if (resFailureReason) {
+      if (plan.failureReason) {
+        resFailureReason.textContent = plan.failureReason;
+        resFailureReason.style.display = 'block';
+      } else {
+        resFailureReason.style.display = 'none';
+      }
+    }
+
+    updateDistanceContext();
   }
 
   function calculateTransfer() {
@@ -263,7 +304,80 @@ export function initTravelPlanner(state: AppState): void {
     btnClear.addEventListener('click', clearSelection);
   }
 
+  // Simulation controls (mirror Map tab behaviour)
+  function updatePlayPause() {
+    if (btnTravelPlay && btnTravelPause) {
+      btnTravelPlay.style.display = state.isPlaying ? 'none' : 'inline-block';
+      btnTravelPause.style.display = state.isPlaying ? 'inline-block' : 'none';
+    }
+  }
+
+  if (btnTravelPlay) {
+    btnTravelPlay.addEventListener('click', () => {
+      state.isPlaying = true;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelPause) {
+    btnTravelPause.addEventListener('click', () => {
+      state.isPlaying = false;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelReverse) {
+    btnTravelReverse.addEventListener('click', () => {
+      state.isReversed = !state.isReversed;
+      btnTravelReverse.classList.toggle('active', state.isReversed);
+    });
+  }
+  if (travelSpeedSelect) {
+    travelSpeedSelect.addEventListener('change', () => {
+      state.speed = parseFloat(travelSpeedSelect.value) || 1;
+    });
+  }
+  if (btnTravelStepMinus7) {
+    btnTravelStepMinus7.addEventListener('click', () => {
+      state.simDayOffset -= 7;
+      state.isPlaying = false;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelStepMinus1) {
+    btnTravelStepMinus1.addEventListener('click', () => {
+      state.simDayOffset -= 1;
+      state.isPlaying = false;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelStepPlus1) {
+    btnTravelStepPlus1.addEventListener('click', () => {
+      state.simDayOffset += 1;
+      state.isPlaying = false;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelStepPlus7) {
+    btnTravelStepPlus7.addEventListener('click', () => {
+      state.simDayOffset += 7;
+      state.isPlaying = false;
+      updatePlayPause();
+    });
+  }
+  if (btnTravelReset) {
+    btnTravelReset.addEventListener('click', () => {
+      state.simDayOffset = 0;
+    });
+  }
+
+  updatePlayPause();
   updatePanel();
+
+  // Keep distance context updated while simulation runs
+  setInterval(() => {
+    if (tp.isActive && tp.originId && tp.destinationId) {
+      updateDistanceContext();
+    }
+  }, 200);
 }
 
 /**

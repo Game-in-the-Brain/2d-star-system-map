@@ -232,11 +232,18 @@ function drawTravelPlannerOverlays(
   const tp = state.travelPlanner;
   if (!tp || !tp.isActive) return;
 
+  const zoom = state.camera.zoom;
+
+  function getFrame(bodyId: string | null) {
+    if (!bodyId) return null;
+    return frames.get(bodyId) ?? null;
+  }
+
   function drawRing(bodyId: string | null, color: string) {
-    if (!bodyId) return;
-    const frame = frames.get(bodyId);
+    const frame = getFrame(bodyId);
     if (!frame) return;
-    const r = Math.max(frame.distPx + 6, 14);
+    const body = state.bodies.find((b) => b.id === bodyId);
+    const r = Math.max((body?.radiusPx ?? 4) * zoom + 4, 8);
 
     ctx.save();
     ctx.strokeStyle = color;
@@ -246,6 +253,62 @@ function drawTravelPlannerOverlays(
     ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // Draw line between origin and destination with distance label
+  const originFrame = getFrame(tp.originId);
+  const destFrame = getFrame(tp.destinationId);
+  if (originFrame && destFrame) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(originFrame.x, originFrame.y);
+    ctx.lineTo(destFrame.x, destFrame.y);
+    ctx.stroke();
+    ctx.restore();
+
+    // Distance label at midpoint
+    const midX = (originFrame.x + destFrame.x) / 2;
+    const midY = (originFrame.y + destFrame.y) / 2;
+
+    const originBody = state.bodies.find((b) => b.id === tp.originId);
+    const destBody = state.bodies.find((b) => b.id === tp.destinationId);
+    if (originBody && destBody) {
+      const oPos = {
+        x: Math.cos(originFrame.angle) * originBody.distanceAU,
+        y: Math.sin(originFrame.angle) * originBody.distanceAU,
+      };
+      const dPos = {
+        x: Math.cos(destFrame.angle) * destBody.distanceAU,
+        y: Math.sin(destFrame.angle) * destBody.distanceAU,
+      };
+      const distAU = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
+      const label = `${distAU.toFixed(2)} AU`;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // Small dark background pill for readability
+      const metrics = ctx.measureText(label);
+      const pad = 4;
+      ctx.fillStyle = 'rgba(10, 15, 30, 0.75)';
+      ctx.beginPath();
+      ctx.roundRect(
+        midX - metrics.width / 2 - pad,
+        midY - 8 - pad,
+        metrics.width + pad * 2,
+        16 + pad * 2,
+        4
+      );
+      ctx.fill();
+      ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
+      ctx.fillText(label, midX, midY);
+      ctx.restore();
+    }
   }
 
   drawRing(tp.originId, '#4ade80'); // green

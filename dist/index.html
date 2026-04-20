@@ -11,7 +11,7 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-BgcAoZzJ.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-DrKHbFH8.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-BruvfWfs.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
@@ -144,6 +144,31 @@
               <label>Destination</label>
               <div id="travel-destination" class="travel-body-tag">—</div>
             </div>
+
+            <!-- Simulation controls (mirrored from Map tab for convenience) -->
+            <div class="control-row" style="justify-content: center;">
+              <button id="btn-travel-play" class="btn" aria-label="Play" title="Play">▶</button>
+              <button id="btn-travel-pause" class="btn" aria-label="Pause" title="Pause" style="display:none">⏸</button>
+              <button id="btn-travel-reverse" class="btn" aria-label="Reverse" title="Reverse">⏮</button>
+              <select id="travel-speed-select" class="btn" title="Simulation speed">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="5">5×</option>
+                <option value="10">10×</option>
+                <option value="30">30×</option>
+                <option value="365">365×</option>
+              </select>
+            </div>
+            <div class="control-row">
+              <button id="btn-travel-step-minus-7" class="btn small">-7d</button>
+              <button id="btn-travel-step-minus-1" class="btn small">-1d</button>
+              <button id="btn-travel-step-plus-1" class="btn small">+1d</button>
+              <button id="btn-travel-step-plus-7" class="btn small">+7d</button>
+              <button id="btn-travel-reset" class="btn small">Reset</button>
+            </div>
+
             <div class="travel-section">
               <label for="travel-delta-v">Spacecraft Delta-V (km/s)</label>
               <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
@@ -161,6 +186,23 @@
             <div class="control-row">
               <button id="btn-clear-travel" class="btn small" style="width: 100%;">Clear Selection</button>
             </div>
+
+            <!-- Distance context -->
+            <div class="travel-results" style="display:flex;">
+              <div class="travel-result-row">
+                <span class="travel-result-label">Current Dist:</span>
+                <span id="res-current-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Closest:</span>
+                <span id="res-min-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Farthest:</span>
+                <span id="res-max-dist" class="travel-result-value">—</span>
+              </div>
+            </div>
+
             <div id="travel-results" class="travel-results" style="display:none;">
               <div class="travel-result-row">
                 <span class="travel-result-label">Escape Origin:</span>
@@ -192,6 +234,7 @@
                 <span class="travel-result-label">Next Window:</span>
                 <span id="res-next-window" class="travel-result-value">—</span>
               </div>
+              <div id="res-failure-reason" class="travel-result-row" style="display:none; margin-top:4px; color:#ef4444; font-size:11px; line-height:1.4;"></div>
             </div>
           </div>
         </div>
