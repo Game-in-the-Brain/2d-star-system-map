@@ -1,7 +1,6 @@
 import type { AppState, SceneBody, ZoneBoundaries } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
-import { logScaleDistance, resetCamera, worldToScreen } from './camera';
-import { getBodyPositionAU } from './travelPhysics';
+import { logScaleDistance, resetCamera } from './camera';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -139,7 +138,7 @@ function draw(
   }
 
   // Travel Planner selection rings (drawn on top)
-  drawTravelPlannerOverlays(ctx, state, originX, originY, camera.zoom);
+  drawTravelPlannerOverlays(ctx, state, frames);
 }
 
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
@@ -228,30 +227,23 @@ function computeBodyFrames(
 function drawTravelPlannerOverlays(
   ctx: CanvasRenderingContext2D,
   state: AppState,
-  originX: number,
-  originY: number,
-  zoom: number
+  frames: Map<string, BodyFrame>
 ): void {
   const tp = state.travelPlanner;
   if (!tp || !tp.isActive) return;
 
-  const cx = state.width / 2;
-  const cy = state.height / 2;
-
   function drawRing(bodyId: string | null, color: string) {
     if (!bodyId) return;
-    const body = state.bodies.find((b) => b.id === bodyId);
-    if (!body) return;
-    const pos = getBodyPositionAU(body, state.simDayOffset, state.bodies);
-    const screenPos = worldToScreen(pos, state.camera, cx, cy);
-    const r = Math.max(body.radiusPx * zoom + 6, 14);
+    const frame = frames.get(bodyId);
+    if (!frame) return;
+    const r = Math.max(frame.distPx + 6, 14);
 
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.arc(screenPos.x, screenPos.y, r, 0, Math.PI * 2);
+    ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }

@@ -1,6 +1,6 @@
-import type { AppState, SceneBody, TravelPlan, TravelPlannerState } from './types';
-import { buildTravelPlan, getBodyPositionAU } from './travelPhysics';
-import { worldToScreen } from './camera';
+import type { AppState, SceneBody, TravelPlan, TravelPlannerState, Point } from './types';
+import { buildTravelPlan } from './travelPhysics';
+import { logScaleDistance } from './camera';
 
 const HIT_RADIUS_PX = 18;
 
@@ -17,6 +17,47 @@ export function createTravelPlannerState(): TravelPlannerState {
 }
 
 /**
+ * Compute a body's screen position using the same log-scaled orbital
+ * distances that the renderer uses.  This is essential for accurate
+ * hit-testing against the visually rendered bodies.
+ */
+function getBodyScreenPos(body: SceneBody, state: AppState): Point | null {
+  const { camera, width, height, simDayOffset, bodies } = state;
+  const cx = width / 2;
+  const cy = height / 2;
+  const originX = cx - camera.x * camera.zoom;
+  const originY = cy - camera.y * camera.zoom;
+
+  if (!body.parentId) {
+    const period = body.periodDays;
+    const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
+    const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * camera.zoom : 0;
+    return {
+      x: originX + Math.cos(angle) * distPx,
+      y: originY + Math.sin(angle) * distPx,
+    };
+  }
+
+  // Moon — compute parent position first, then add moon offset
+  const parent = bodies.find((b) => b.id === body.parentId);
+  if (!parent) return null;
+  const parentPos = getBodyScreenPos(parent, state);
+  if (!parentPos) return null;
+
+  const period = body.periodDays;
+  const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
+  const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0;
+  const parentDistPx = Math.hypot(parentPos.x - originX, parentPos.y - originY);
+  const maxMoonDist = parentDistPx * 0.25;
+  const moonDistPx = Math.max(6, Math.min(maxMoonDist, rawMoonDist));
+
+  return {
+    x: parentPos.x + Math.cos(angle) * moonDistPx,
+    y: parentPos.y + Math.sin(angle) * moonDistPx,
+  };
+}
+
+/**
  * Find the body closest to the given screen position.
  * Returns null if no body is within HIT_RADIUS_PX.
  */
@@ -25,18 +66,15 @@ export function findBodyAtScreenPos(
   screenY: number,
   state: AppState
 ): SceneBody | null {
-  const { bodies, camera, width, height, simDayOffset } = state;
+  const { bodies, camera } = state;
   if (!bodies.length) return null;
-
-  const cx = width / 2;
-  const cy = height / 2;
 
   let nearest: SceneBody | null = null;
   let nearestDist = Infinity;
 
   for (const body of bodies) {
-    const pos = getBodyPositionAU(body, simDayOffset, bodies);
-    const screenPos = worldToScreen(pos, camera, cx, cy);
+    const screenPos = getBodyScreenPos(body, state);
+    if (!screenPos) continue;
     const dist = Math.hypot(screenPos.x - screenX, screenPos.y - screenY);
 
     // Use body's visual radius as minimum hit size
