@@ -47,7 +47,9 @@ while ((match = jsScriptRegex.exec(html)) !== null) {
   const relativeSrc = src.startsWith(BASE_PATH) ? src.slice(BASE_PATH.length) : src.startsWith('/') ? src.slice(1) : src;
   const jsPath = resolve(distDir, relativeSrc);
   if (existsSync(jsPath)) {
-    const js = readFileSync(jsPath, 'utf-8');
+    let js = readFileSync(jsPath, 'utf-8');
+    // Strip modulepreload import since the polyfill is inlined separately
+    js = js.replace(/import\s*"[^"]*modulepreload[^"]*";?/g, '');
     html = html.replace(match[0], `<script type="module">\n${js}\n</script>`);
     console.log(`  inlined JS: ${src}`);
   } else {
