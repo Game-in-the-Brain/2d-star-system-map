@@ -238,6 +238,10 @@ function main() {
   state.canvas = canvas;
   state.ctx = ctx;
 
+  // Detect embed mode (FRD-053 Phase 2)
+  const urlParams = new URLSearchParams(window.location.search);
+  const isEmbed = urlParams.get('embed') === '1';
+
   // Check for injected payload first (standalone interactive export)
   let urlPayload: MapPayload | null = null;
   const injected = (window as unknown as Record<string, unknown>).__MNEME_INITIAL_PAYLOAD__;
@@ -251,8 +255,7 @@ function main() {
 
   // Fall back to URL params
   if (!urlPayload) {
-    const params = new URLSearchParams(window.location.search);
-    const starId = params.get('starId');
+    const starId = urlParams.get('starId');
     urlPayload = decodeMapPayload(window.location.search);
 
     if (starId && !urlPayload) {
@@ -262,6 +265,20 @@ function main() {
         state.gmNotes = saved.gmNotes || '';
       }
     }
+  }
+
+  // Embed mode: listen for postMessage from parent (MWG)
+  if (isEmbed) {
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'mneme-load-system') {
+        const payload = event.data.payload as MapPayload;
+        if (payload && payload.starSystem) {
+          loadSystemIntoState(state, payload);
+          // Notify parent that system loaded
+          event.source?.postMessage({ type: 'mneme-system-loaded', starId: payload.starSystem.key }, { targetOrigin: '*' });
+        }
+      }
+    });
   }
 
   if (urlPayload) {
@@ -291,6 +308,30 @@ function main() {
   initInputHandlers(state, resetView);
   initRenderer(state);
   initPasteControls(state);
+
+  // FRD-053 Phase 2: Embed mode chrome hiding
+  if (isEmbed) {
+    const controls = document.getElementById('controls');
+    const expandBtn = document.getElementById('btn-expand-panel');
+    const watermark = document.getElementById('version-watermark');
+    const loading = document.getElementById('loading');
+    if (controls) controls.style.display = 'none';
+    if (expandBtn) expandBtn.style.display = 'none';
+    if (watermark) watermark.style.display = 'none';
+    if (loading) loading.style.display = 'none';
+
+    // Auto-start animation if a system is loaded
+    if (currentPayload) {
+      const playBtn = document.getElementById('btn-play') as HTMLButtonElement | null;
+      const pauseBtn = document.getElementById('btn-pause') as HTMLButtonElement | null;
+      if (playBtn && pauseBtn) {
+        playBtn.style.display = 'none';
+        pauseBtn.style.display = 'inline-block';
+      }
+      state.isPlaying = true;
+    }
+  }
+
   initEditor(state, (system, gmNotes) => {
     state.gmNotes = gmNotes;
     if (currentPayload) {
