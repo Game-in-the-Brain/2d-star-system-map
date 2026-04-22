@@ -142,8 +142,8 @@ export function findBodyAtScreenPos(
 
     const dist = Math.hypot(screenPos.x - screenX, screenPos.y - screenY);
 
-    // Hit radius = exact visual size, scaling with zoom
-    const hitR = Math.max(body.radiusPx * camera.zoom, 2);
+    // Hit radius = fixed screen-space minimum so bodies are always clickable at any zoom
+    const hitR = Math.max(body.radiusPx, 8);
     if (dist < hitR && dist < nearestDist) {
       nearest = body;
       nearestDist = dist;
@@ -319,20 +319,20 @@ export function initTravelPlanner(state: AppState): void {
     updatePanel();
   }
 
-  // Track active tab by polling class list (editor.ts handles tab switching).
-  // In embed mode the panel is detached from #controls; detect via explicit inline style.
-  function checkActive() {
-    const tabBtn = document.querySelector('.tab-btn[data-tab="travel"]');
-    const tabBtnActive = tabBtn?.classList.contains('active') ?? false;
-    const travelPanelEl = document.getElementById('tab-travel');
-    const embedActive = travelPanelEl?.style.display === 'flex';
-    const wasActive = tp.isActive;
-    tp.isActive = tabBtnActive || embedActive;
-    if (tp.isActive && !wasActive) {
+  // Standalone mode: activate/deactivate via tab button clicks.
+  // Embed mode: isActive is driven directly by the FAB handler in main.ts.
+  const travelTabBtnEl = document.querySelector('.tab-btn[data-tab="travel"]');
+  if (travelTabBtnEl) {
+    travelTabBtnEl.addEventListener('click', () => {
+      tp.isActive = true;
       updatePanel();
-    }
+    });
   }
-  setInterval(checkActive, 200);
+  document.querySelectorAll('.tab-btn:not([data-tab="travel"])').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tp.isActive = false;
+    });
+  });
 
   // Inputs
   if (deltaVInput) {

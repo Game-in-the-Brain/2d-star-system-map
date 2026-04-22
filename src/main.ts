@@ -128,8 +128,15 @@ function initPasteControls(state: AppState): void {
     btnLoadSystem.addEventListener('click', () => {
       const payload = parseSystemPaste(systemPaste.value);
       if (payload) {
-        loadSystemIntoState(state, payload);
-        systemPaste.value = '';
+        try {
+          loadSystemIntoState(state, payload);
+          systemPaste.value = '';
+        } catch (err) {
+          console.error('Failed to load system:', err);
+          alert(`Failed to load system: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      } else if (systemPaste.value.trim()) {
+        alert('Could not parse system JSON. Make sure you copied it with "Copy for 2D Map" from MWG.');
       }
     });
   }
