@@ -142,8 +142,8 @@ export function findBodyAtScreenPos(
 
     const dist = Math.hypot(screenPos.x - screenX, screenPos.y - screenY);
 
-    // Hit radius = fixed screen-space minimum so bodies are always clickable at any zoom
-    const hitR = Math.max(body.radiusPx, 8);
+    // Hit radius scales with zoom but floors at 18px so bodies are always clickable
+    const hitR = Math.max(body.radiusPx * camera.zoom, 18);
     if (dist < hitR && dist < nearestDist) {
       nearest = body;
       nearestDist = dist;
