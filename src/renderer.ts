@@ -40,6 +40,8 @@ export function initRenderer(state: AppState): () => void {
   (state as unknown as Record<string, () => void>).initCamera = initCamera;
 
   function loop(now: number) {
+    rafId = requestAnimationFrame(loop);
+
     const rawDt = (now - state.lastFrameTime) / 1000;
     const dt = Math.min(rawDt, 0.1);
     state.lastFrameTime = now;
@@ -49,12 +51,13 @@ export function initRenderer(state: AppState): () => void {
       state.simDayOffset += dt * state.speed * direction;
     }
 
-    // Travel timeline takes over simDayOffset when playing (runs after main sim update)
-    tickTravelTimeline(state, dt);
-
-    initCamera();
-    draw(state, starfield, nebulas);
-    rafId = requestAnimationFrame(loop);
+    try {
+      tickTravelTimeline(state, dt);
+      initCamera();
+      draw(state, starfield, nebulas);
+    } catch (err) {
+      console.error('[renderer] frame error:', err);
+    }
   }
 
   state.lastFrameTime = performance.now();
@@ -165,10 +168,10 @@ function drawZoneBands(
 ): void {
   for (const band of ZONE_BANDS) {
     const zone = zones[band.key];
-    if (!zone || zone.max === null) continue;
+    if (!zone || zone.max == null) continue;
     const innerR = logScaleDistance(Math.max(0, zone.min), 80) * zoom;
     const outerR = logScaleDistance(zone.max, 80) * zoom;
-    if (outerR <= 0) continue;
+    if (outerR <= 0 || innerR >= outerR) continue;
 
     const gradient = ctx.createRadialGradient(originX, originY, innerR, originX, originY, outerR);
     gradient.addColorStop(0, band.inner);
