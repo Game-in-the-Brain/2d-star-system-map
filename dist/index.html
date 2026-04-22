@@ -11,14 +11,15 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-DrKHbFH8.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-d75BzIvm.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
-    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-BruvfWfs.css">
+    <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-DEGxtRMW.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
   <body>
     <div id="app">
       <canvas id="starmap"></canvas>
       <button id="btn-expand-panel" class="panel-fab" aria-label="Open controls" title="Open controls" style="display:none">☰</button>
+      <button id="btn-journey" class="panel-fab" aria-label="Open Travel Planner" title="Travel Planner" style="display:none">✈</button>
       <div id="controls" class="control-panel">
         <div class="panel-header">
           <button id="btn-collapse-panel" class="btn panel-toggle" aria-label="Close controls" title="Close controls">✕</button>
@@ -235,6 +236,24 @@
                 <span id="res-next-window" class="travel-result-value">—</span>
               </div>
               <div id="res-failure-reason" class="travel-result-row" style="display:none; margin-top:4px; color:#ef4444; font-size:11px; line-height:1.4;"></div>
+            </div>
+
+            <!-- Travel Timeline (FRD-049) -->
+            <div id="travel-timeline-section" class="travel-timeline-section" style="display:none;">
+              <div class="travel-timeline-header">
+                <span class="travel-result-label">Journey</span>
+                <span id="travel-day-counter" class="travel-day-counter">Day 0</span>
+              </div>
+              <input id="travel-timeline-slider" class="travel-timeline-slider" type="range" min="0" max="100" step="1" value="0" />
+              <div id="travel-timeline-zones" class="travel-timeline-zones"></div>
+              <div class="control-row" style="justify-content:center; gap:4px; flex-wrap:wrap; margin-top:2px;">
+                <button id="btn-timeline-play" class="btn small" title="Play journey">▶</button>
+                <button id="btn-timeline-pause" class="btn small" title="Pause" style="display:none">⏸</button>
+                <button id="btn-timeline-reset" class="btn small" title="Reset to departure">⏹</button>
+                <button id="btn-timeline-loop" class="btn small" title="Loop">↺</button>
+                <button id="btn-pin-departure" class="btn small" title="Pin current sim date as departure">📌 Pin</button>
+                <button id="btn-jump-arrival" class="btn small" title="Jump to optimistic arrival">🎯 Jump</button>
+              </div>
             </div>
           </div>
         </div>

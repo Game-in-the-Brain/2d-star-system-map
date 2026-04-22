@@ -410,7 +410,26 @@ export function getBodyPositionAU(body: SceneBody, dayOffset: number, starMassSo
 
 ---
 
-## 9. Related FRDs
+## 9. QA / RCA Log
+
+### QA-048-01 — Travel Planner inaccessible in embed mode (FIXED 2026-04-23)
+
+**Symptom:** The Travel Planner tab and all journey options are completely hidden when the 2D map is loaded via MWG's Orbit tab (iframe with `?embed=1`). No UI element exists to access travel planning.
+
+**Root cause:** `main.ts` embed mode chrome-hiding block (`FRD-053 Phase 2`, commit `dc3956c`) set `controls.style.display = 'none'`, which hid the entire sidebar including the Travel Planner tab panel (`#tab-travel`). No alternative entry point was added for embed mode.
+
+**Secondary effect:** `travelPlanner.ts` `checkActive()` detected active state by polling the Travel tab button's `active` CSS class. In embed mode the button is never visible or clicked, so `tp.isActive` was permanently `false` — meaning canvas clicks were silently dropped by `handleTravelPlannerClick` even if the panel had been made visible by other means.
+
+**Fix (`main.ts`, `travelPlanner.ts`, `index.html`, `styles.css`):**
+1. Before hiding `#controls`, detach `#tab-travel` from it and re-append to `#app` with class `travel-embed-overlay` (positioned floating, bottom-right).
+2. Add `#btn-journey` FAB button (✈) visible only in embed mode, positioned bottom-right. Toggles the overlay open/closed. Sets `tp.isActive` directly on state. Shows ✕ when open.
+3. `checkActive()` now also checks `travelPanelEl?.style.display === 'flex'` (set explicitly by the FAB handler) as a second activation path alongside the tab-button class check. Standalone mode unaffected.
+
+**Files changed:** `src/main.ts`, `src/travelPlanner.ts`, `index.html`, `src/styles.css`
+
+---
+
+## 10. Related FRDs
 
 - FRD-046 (Save Page + System Editor) — ✅ DONE
 - FRD-047 (PWA) — ✅ DONE

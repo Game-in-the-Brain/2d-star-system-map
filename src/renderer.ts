@@ -1,6 +1,7 @@
-import type { AppState, SceneBody, ZoneBoundaries } from './types';
+import type { AppState, SceneBody, ZoneBoundaries, Point } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
 import { logScaleDistance, resetCamera } from './camera';
+import { tickTravelTimeline } from './travelPlanner';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -47,6 +48,9 @@ export function initRenderer(state: AppState): () => void {
       const direction = state.isReversed ? -1 : 1;
       state.simDayOffset += dt * state.speed * direction;
     }
+
+    // Travel timeline takes over simDayOffset when playing (runs after main sim update)
+    tickTravelTimeline(state, dt);
 
     initCamera();
     draw(state, starfield, nebulas);
@@ -137,8 +141,8 @@ function draw(
     drawBody(ctx, body, frame, originX, originY, width, height, camera.zoom);
   }
 
-  // Travel Planner selection rings (drawn on top)
-  drawTravelPlannerOverlays(ctx, state, frames);
+  // Travel Planner overlays (selection rings, transfer chord, spacecraft)
+  drawTravelPlannerOverlays(ctx, state, frames, originX, originY);
 }
 
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
@@ -224,10 +228,38 @@ function computeBodyFrames(
   return frames;
 }
 
+// Compute a body's screen position at an arbitrary simulation day offset.
+// Mirrors the log-scale rendering used by computeBodyFrames.
+function bodyScreenPosAtTime(
+  body: SceneBody,
+  dayOffset: number,
+  bodies: SceneBody[],
+  originX: number,
+  originY: number,
+  zoom: number
+): Point | null {
+  if (!body.parentId) {
+    const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+    const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * zoom : 0;
+    return { x: originX + Math.cos(angle) * distPx, y: originY + Math.sin(angle) * distPx };
+  }
+  const parent = bodies.find((b) => b.id === body.parentId);
+  if (!parent) return null;
+  const parentPos = bodyScreenPosAtTime(parent, dayOffset, bodies, originX, originY, zoom);
+  if (!parentPos) return null;
+  const parentDistPx = parent.distanceAU > 0 ? logScaleDistance(parent.distanceAU, 80) * zoom : 0;
+  const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+  const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * zoom : 0;
+  const moonDistPx = Math.max(6, Math.min(parentDistPx * 0.25, rawMoonDist));
+  return { x: parentPos.x + Math.cos(angle) * moonDistPx, y: parentPos.y + Math.sin(angle) * moonDistPx };
+}
+
 function drawTravelPlannerOverlays(
   ctx: CanvasRenderingContext2D,
   state: AppState,
-  frames: Map<string, BodyFrame>
+  frames: Map<string, BodyFrame>,
+  originX: number,
+  originY: number,
 ): void {
   const tp = state.travelPlanner;
   if (!tp || !tp.isActive) return;
@@ -244,7 +276,6 @@ function drawTravelPlannerOverlays(
     if (!frame) return;
     const body = state.bodies.find((b) => b.id === bodyId);
     const r = Math.max((body?.radiusPx ?? 4) * zoom + 4, 8);
-
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
@@ -255,64 +286,130 @@ function drawTravelPlannerOverlays(
     ctx.restore();
   }
 
-  // Draw line between origin and destination with distance label
-  const originFrame = getFrame(tp.originId);
-  const destFrame = getFrame(tp.destinationId);
-  if (originFrame && destFrame) {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.moveTo(originFrame.x, originFrame.y);
-    ctx.lineTo(destFrame.x, destFrame.y);
-    ctx.stroke();
-    ctx.restore();
+  const plan = tp.lastPlan;
 
-    // Distance label at midpoint
-    const midX = (originFrame.x + destFrame.x) / 2;
-    const midY = (originFrame.y + destFrame.y) / 2;
-
+  if (plan?.isPossible && tp.originId && tp.destinationId) {
+    // Fixed transfer chord: origin where it was at launch → destination where it will be at arrival
     const originBody = state.bodies.find((b) => b.id === tp.originId);
     const destBody = state.bodies.find((b) => b.id === tp.destinationId);
-    if (originBody && destBody) {
-      const oPos = {
-        x: Math.cos(originFrame.angle) * originBody.distanceAU,
-        y: Math.sin(originFrame.angle) * originBody.distanceAU,
-      };
-      const dPos = {
-        x: Math.cos(destFrame.angle) * destBody.distanceAU,
-        y: Math.sin(destFrame.angle) * destBody.distanceAU,
-      };
-      const distAU = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
-      const label = `${distAU.toFixed(2)} AU`;
 
+    if (originBody && destBody) {
+      const departure = tp.timeline.pinnedDepartureDayOffset ?? plan.departureDayOffset;
+      const arrival = departure + plan.pessimisticArrivalDays;
+
+      const launchPos = bodyScreenPosAtTime(originBody, departure, state.bodies, originX, originY, zoom);
+      const arrivalPos = bodyScreenPosAtTime(destBody, arrival, state.bodies, originX, originY, zoom);
+
+      if (launchPos && arrivalPos) {
+        const t = Math.min(Math.max(tp.timeline.travelDayOffset / plan.pessimisticArrivalDays, 0), 1);
+        const shipX = launchPos.x + (arrivalPos.x - launchPos.x) * t;
+        const shipY = launchPos.y + (arrivalPos.y - launchPos.y) * t;
+        const chordAngle = Math.atan2(arrivalPos.y - launchPos.y, arrivalPos.x - launchPos.x);
+
+        // Travelled portion (solid blue)
+        ctx.save();
+        ctx.strokeStyle = 'rgba(96, 165, 250, 0.75)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(launchPos.x, launchPos.y);
+        ctx.lineTo(shipX, shipY);
+        ctx.stroke();
+
+        // Remaining portion (dashed, dimmer)
+        ctx.strokeStyle = 'rgba(96, 165, 250, 0.25)';
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(shipX, shipY);
+        ctx.lineTo(arrivalPos.x, arrivalPos.y);
+        ctx.stroke();
+        ctx.restore();
+
+        // Destination arrival marker (small circle where ship is headed)
+        ctx.save();
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(arrivalPos.x, arrivalPos.y, 6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Spacecraft chevron at interpolated position
+        ctx.save();
+        ctx.translate(shipX, shipY);
+        ctx.rotate(chordAngle);
+        ctx.fillStyle = '#60a5fa';
+        ctx.beginPath();
+        ctx.moveTo(7, 0);
+        ctx.lineTo(-5, -3.5);
+        ctx.lineTo(-5, 3.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // Day label near ship
+        {
+          const label = tp.timeline.travelDayOffset > 0
+            ? `Day ${Math.round(tp.timeline.travelDayOffset)}`
+            : 'Launch';
+          const offset = 10;
+          ctx.save();
+          ctx.font = '10px system-ui, sans-serif';
+          const w = ctx.measureText(label).width;
+          ctx.fillStyle = 'rgba(10, 15, 30, 0.8)';
+          ctx.fillRect(shipX + offset, shipY - 14, w + 6, 14);
+          ctx.fillStyle = 'rgba(200, 220, 255, 0.95)';
+          ctx.textBaseline = 'alphabetic';
+          ctx.fillText(label, shipX + offset + 3, shipY - 3);
+          ctx.restore();
+        }
+      }
+    }
+  } else {
+    // No active plan: draw a simple current-distance line between selected bodies
+    const originFrame = getFrame(tp.originId);
+    const destFrame = getFrame(tp.destinationId);
+    if (originFrame && destFrame) {
       ctx.save();
-      ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
-      ctx.font = '11px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Small dark background pill for readability
-      const metrics = ctx.measureText(label);
-      const pad = 4;
-      ctx.fillStyle = 'rgba(10, 15, 30, 0.75)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
       ctx.beginPath();
-      ctx.roundRect(
-        midX - metrics.width / 2 - pad,
-        midY - 8 - pad,
-        metrics.width + pad * 2,
-        16 + pad * 2,
-        4
-      );
-      ctx.fill();
-      ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
-      ctx.fillText(label, midX, midY);
+      ctx.moveTo(originFrame.x, originFrame.y);
+      ctx.lineTo(destFrame.x, destFrame.y);
+      ctx.stroke();
       ctx.restore();
+
+      const midX = (originFrame.x + destFrame.x) / 2;
+      const midY = (originFrame.y + destFrame.y) / 2;
+      const originBody = state.bodies.find((b) => b.id === tp.originId);
+      const destBody = state.bodies.find((b) => b.id === tp.destinationId);
+      if (originBody && destBody) {
+        const oPos = { x: Math.cos(originFrame.angle) * originBody.distanceAU, y: Math.sin(originFrame.angle) * originBody.distanceAU };
+        const dPos = { x: Math.cos(destFrame.angle) * destBody.distanceAU, y: Math.sin(destFrame.angle) * destBody.distanceAU };
+        const distAU = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
+        const label = `${distAU.toFixed(2)} AU`;
+        ctx.save();
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const metrics = ctx.measureText(label);
+        const pad = 4;
+        ctx.fillStyle = 'rgba(10, 15, 30, 0.75)';
+        ctx.beginPath();
+        ctx.roundRect(midX - metrics.width / 2 - pad, midY - 8 - pad, metrics.width + pad * 2, 16 + pad * 2, 4);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
+        ctx.fillText(label, midX, midY);
+        ctx.restore();
+      }
     }
   }
 
-  drawRing(tp.originId, '#4ade80'); // green
-  drawRing(tp.destinationId, '#fb923c'); // orange
+  // Selection rings always on current body positions
+  drawRing(tp.originId, '#4ade80');   // green = origin
+  drawRing(tp.destinationId, '#fb923c'); // orange = destination
 }
 
 function drawBody(

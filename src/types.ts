@@ -184,6 +184,15 @@ export interface TravelPlan {
   failureReason: string | null;
 }
 
+// FRD-049: Travel Timeline
+export interface TravelTimelineState {
+  travelDayOffset: number;
+  isPlaying: boolean;
+  isLooping: boolean;
+  playbackSpeed: number; // days per second (multiplied by state.speed)
+  pinnedDepartureDayOffset: number | null; // null = use plan's departure
+}
+
 export interface TravelPlannerState {
   originId: string | null;
   destinationId: string | null;
@@ -192,4 +201,5 @@ export interface TravelPlannerState {
   customDepartureDayOffset: number;
   lastPlan: TravelPlan | null;
   isActive: boolean;
+  timeline: TravelTimelineState;
 }
