@@ -49,7 +49,7 @@ export interface StarSystem {
     id?: string;
     distanceAU: number;
     mass: number;
-    gasClass: number;
+    gasClass: number | string;
   }>;
   moons?: Array<{
     id?: string;

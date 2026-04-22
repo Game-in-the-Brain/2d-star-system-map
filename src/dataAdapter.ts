@@ -180,8 +180,9 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
 
   // Gas worlds
   system.gasWorlds?.forEach((p, idx) => {
+    const gasClassNum = normalizeGasClass(p.gasClass);
     let type: BodyType = 'gas-i';
-    switch (p.gasClass) {
+    switch (gasClassNum) {
       case 1: type = 'gas-i'; break;
       case 2: type = 'gas-ii'; break;
       case 3: type = 'gas-iii'; break;
@@ -193,7 +194,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(p.id, {
       id,
       type,
-      label: `Gas ${p.gasClass === 4 ? 'IV/V' : toRoman(p.gasClass)}`,
+      label: `Gas ${gasClassNum === 4 ? 'IV/V' : toRoman(gasClassNum)}`,
       distanceAU: p.distanceAU,
       mass: p.mass,
       radiusPx: massToRadiusPx(p.mass, type),
@@ -270,6 +271,12 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
   });
 
   return bodies;
+}
+
+function normalizeGasClass(gasClass: number | string): number {
+  if (typeof gasClass === 'number') return gasClass;
+  const map: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
+  return map[gasClass.toUpperCase()] ?? 1;
 }
 
 function toRoman(n: number): string {
