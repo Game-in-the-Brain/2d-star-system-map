@@ -142,6 +142,31 @@
               <label>Destination</label>
               <div id="travel-destination" class="travel-body-tag">—</div>
             </div>
+
+            <!-- Sim playback controls (mirrored from Map tab) -->
+            <div class="control-row" style="justify-content: center;">
+              <button id="btn-travel-play" class="btn" aria-label="Play" title="Play">▶</button>
+              <button id="btn-travel-pause" class="btn" aria-label="Pause" title="Pause" style="display:none">⏸</button>
+              <button id="btn-travel-reverse" class="btn" aria-label="Reverse" title="Reverse">⏮</button>
+              <select id="travel-speed-select" class="btn" title="Simulation speed">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="5">5×</option>
+                <option value="10">10×</option>
+                <option value="30">30×</option>
+                <option value="365">365×</option>
+              </select>
+            </div>
+            <div class="control-row">
+              <button id="btn-travel-step-minus-7" class="btn small">-7d</button>
+              <button id="btn-travel-step-minus-1" class="btn small">-1d</button>
+              <button id="btn-travel-step-plus-1" class="btn small">+1d</button>
+              <button id="btn-travel-step-plus-7" class="btn small">+7d</button>
+              <button id="btn-travel-reset" class="btn small">Reset</button>
+            </div>
+
             <div class="travel-section">
               <label for="travel-delta-v">Spacecraft Delta-V (km/s)</label>
               <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
@@ -159,6 +184,23 @@
             <div class="control-row">
               <button id="btn-clear-travel" class="btn small" style="width: 100%;">Clear Selection</button>
             </div>
+
+            <!-- Distance context -->
+            <div class="travel-results" style="display:flex;">
+              <div class="travel-result-row">
+                <span class="travel-result-label">Current Dist:</span>
+                <span id="res-current-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Closest:</span>
+                <span id="res-min-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Farthest:</span>
+                <span id="res-max-dist" class="travel-result-value">—</span>
+              </div>
+            </div>
+
             <div id="travel-results" class="travel-results" style="display:none;">
               <div class="travel-result-row">
                 <span class="travel-result-label">Escape Origin:</span>
@@ -167,6 +209,10 @@
               <div class="travel-result-row">
                 <span class="travel-result-label">Capture Dest:</span>
                 <span id="res-capture-dest" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">HRS Traversal:</span>
+                <span id="res-hrs-cost" class="travel-result-value">—</span>
               </div>
               <div class="travel-result-row">
                 <span class="travel-result-label">Excess ΔV:</span>
@@ -189,6 +235,25 @@
               <div class="travel-result-row">
                 <span class="travel-result-label">Next Window:</span>
                 <span id="res-next-window" class="travel-result-value">—</span>
+              </div>
+              <div id="res-failure-reason" class="travel-result-row" style="display:none; margin-top:4px; color:#ef4444; font-size:11px; line-height:1.4;"></div>
+            </div>
+
+            <!-- Journey Timeline -->
+            <div id="travel-timeline-section" class="travel-timeline-section" style="display:none;">
+              <div class="travel-timeline-header">
+                <span class="travel-result-label">Journey</span>
+                <span id="travel-day-counter" class="travel-day-counter">Day 0</span>
+              </div>
+              <input id="travel-timeline-slider" class="travel-timeline-slider" type="range" min="0" max="100" step="1" value="0" />
+              <div id="travel-timeline-zones" class="travel-timeline-zones"></div>
+              <div class="control-row" style="justify-content:center; gap:4px; flex-wrap:wrap; margin-top:2px;">
+                <button id="btn-timeline-play" class="btn small" title="Play journey">▶</button>
+                <button id="btn-timeline-pause" class="btn small" title="Pause" style="display:none">⏸</button>
+                <button id="btn-timeline-reset" class="btn small" title="Reset to departure">⏹</button>
+                <button id="btn-timeline-loop" class="btn small" title="Loop">↺</button>
+                <button id="btn-pin-departure" class="btn small" title="Pin current sim date as departure">📌 Pin</button>
+                <button id="btn-jump-arrival" class="btn small" title="Jump to optimistic arrival">🎯 Jump</button>
               </div>
             </div>
           </div>

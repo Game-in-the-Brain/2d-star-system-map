@@ -179,6 +179,17 @@ export interface TravelPlan {
   synodicPeriodDays: number;
   nextWindowDayOffset: number;
   isPossible: boolean;
+  failureReason?: string;
+  hrsCostKms?: number;          // Escape velocity cost from HRS/SOI traversals
+  totalCostKms?: number;        // escapeOrigin + captureDest + hrsCost
+}
+
+export interface TravelTimelineState {
+  travelDayOffset: number;      // days into journey (0 = launch)
+  isPlaying: boolean;
+  isLooping: boolean;
+  playbackSpeed: number;        // days/sec multiplier
+  pinnedDepartureDayOffset: number | null;
 }
 
 export interface TravelPlannerState {
@@ -189,4 +200,5 @@ export interface TravelPlannerState {
   customDepartureDayOffset: number;
   lastPlan: TravelPlan | null;
   isActive: boolean;
+  timeline: TravelTimelineState;
 }

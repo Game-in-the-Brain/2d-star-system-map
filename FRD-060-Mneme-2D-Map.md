@@ -1928,6 +1928,59 @@ A two-phase pointer/touch selection algorithm was previously specified here. The
 
 ---
 
+## 29. Hill Sphere / SOI Traversal Cost (FRD-061 Extension)
+
+### 29.1 Rationale
+
+When a spacecraft travels on a transfer trajectory between two bodies, the straight-line chord may pass through the Hill Sphere (or Sphere of Influence) of intermediate bodies. Passing through another body's gravity well requires additional delta-V to escape it. This cost must be accounted for in the Travel Planner's feasibility calculation.
+
+### 29.2 Algorithm
+
+**`calculateHrsTraversalCostKms(origin, destination, departureDayOffset, allBodies, starMassSolar)`**
+
+1. Compute origin and destination positions in AU-space at `departureDayOffset`.
+2. Build the straight-line chord from origin → destination.
+3. Sample the chord at ~0.02 AU resolution (minimum 20 samples).
+4. For each non-star body **B** (excluding origin and destination):
+   a. Compute B's Hill sphere radius: `hillSphereAU(B.mass, starMassSolar, B.distanceAU, B.type)`
+   b. Compute B's position at `departureDayOffset`.
+   c. Find the minimum distance from B's center to any sample point on the chord.
+   d. If `minDist <= hillSphereAU`, the chord intersects B's HRS.
+   e. Add `calculateEscapeVelocityKms(B.mass, estimateRadiusKm(B.mass, B.type))` to the total cost.
+   f. Record B's label in `bodiesEncountered`.
+5. Return `{ hrsCostKms, bodiesEncountered }`.
+
+### 29.3 Integration into `buildTravelPlan`
+
+```typescript
+const { hrsCostKms, bodiesEncountered } = calculateHrsTraversalCostKms(
+  origin, destination, departureDayOffset, allBodies, starMassSolar
+);
+
+const totalCostKms = escapeOriginKms + captureDestKms + hrsCostKms;
+const excessDeltaVKms = deltaVBudgetKms - totalCostKms;
+```
+
+**Failure reasons** (displayed in `#res-failure-reason`):
+- `deltaVBudgetKms < escapeOriginKms`: "Insufficient ΔV to escape [origin] (X km/s required)."
+- `deltaVBudgetKms < escapeOriginKms + captureDestKms`: "Insufficient ΔV to capture at [destination] (X km/s required)."
+- `excessDeltaVKms <= 0` due to HRS cost: "HRS/SOI traversal cost (X km/s) exceeds remaining budget. Encountered: [body labels]."
+- No arrival window found: "Transfer window not found within search horizon (10 years)."
+
+### 29.4 UI Display
+
+When `hrsCostKms > 0`, add a result row inside `#travel-results`:
+- **Label**: "HRS Traversal:"
+- **Value**: `${hrsCostKms} km/s` (with `bodiesEncountered` as tooltip or sub-label)
+
+Also update the **Excess ΔV** row to reflect the post-HRS excess.
+
+### 29.5 Performance Note
+
+For systems with many bodies, the chord sampling can be expensive. Early-exit the inner loop as soon as a sample point falls within the Hill sphere — no need to test remaining samples for that body.
+
+---
+
 ## 28. QA Items — Travel Planner (Revised)
 
 ### QA-TP-01 — Map fully usable with controls collapsed

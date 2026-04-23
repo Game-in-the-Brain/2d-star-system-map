@@ -7,6 +7,23 @@ const EARTH_RADIUS_KM = 6371;
 const SECONDS_PER_DAY = 86400;
 const AU_TO_KM = 1.496e8;
 
+const SOLAR_TO_EM = 332946; // 1 solar mass in Earth masses
+
+/**
+ * Hill sphere radius in AU for a body orbiting a star.
+ * Returns 0 for stars and moons (no meaningful Hill sphere in map context).
+ */
+export function hillSphereAU(
+  bodyMassEM: number,
+  starMassSolar: number,
+  distanceAU: number,
+  bodyType: BodyType
+): number {
+  if (bodyType.startsWith('star') || bodyType === 'moon' || distanceAU <= 0) return 0;
+  const massRatio = bodyMassEM / (3 * starMassSolar * SOLAR_TO_EM);
+  return distanceAU * Math.cbrt(massRatio);
+}
+
 /**
  * Estimate planetary radius in km from mass (Earth masses) and body type.
  * Used because physical radii are not present in the MWG StarSystem payload.
@@ -185,6 +202,95 @@ export function findArrivalWindow(
 }
 
 /**
+ * Compute minimum and maximum distance between two orbiting bodies
+ * over one full synodic period.
+ */
+export function computeMinMaxDistanceAU(
+  origin: SceneBody,
+  destination: SceneBody,
+  allBodies: SceneBody[]
+): { min: number; max: number } {
+  const synodic = calculateSynodicPeriodDays(origin.periodDays, destination.periodDays);
+  if (synodic <= 0) return { min: 0, max: 0 };
+
+  let minDist = Infinity;
+  let maxDist = 0;
+  const steps = Math.min(Math.ceil(synodic), 3650);
+
+  for (let day = 0; day <= steps; day++) {
+    const oPos = getBodyPositionAU(origin, day, allBodies);
+    const dPos = getBodyPositionAU(destination, day, allBodies);
+    const dist = Math.hypot(dPos.x - oPos.x, dPos.y - oPos.y);
+    if (dist < minDist) minDist = dist;
+    if (dist > maxDist) maxDist = dist;
+  }
+
+  return { min: minDist, max: maxDist };
+}
+
+/**
+ * Calculate additional delta-V cost for traversing through other bodies'
+ * Hill Spheres / Spheres of Influence (HRS/SOI) along the transfer path.
+ *
+ * Algorithm:
+ * 1. Sample points along the straight-line chord from origin to destination
+ *    at departure time.
+ * 2. For each non-star body (excluding origin and destination), check if any
+ *    sample point falls within its Hill sphere radius.
+ * 3. If so, add that body's escape velocity to the total HRS traversal cost.
+ *
+ * This is a conservative approximation; actual trajectories may deviate.
+ */
+export function calculateHrsTraversalCostKms(
+  origin: SceneBody,
+  destination: SceneBody,
+  departureDayOffset: number,
+  allBodies: SceneBody[],
+  starMassSolar: number
+): { hrsCostKms: number; bodiesEncountered: string[] } {
+  const originPos = getBodyPositionAU(origin, departureDayOffset, allBodies);
+  const destPos = getBodyPositionAU(destination, departureDayOffset, allBodies);
+
+  const dx = destPos.x - originPos.x;
+  const dy = destPos.y - originPos.y;
+  const chordLength = Math.hypot(dx, dy);
+  const samples = Math.max(20, Math.ceil(chordLength * 50)); // ~0.02 AU resolution
+
+  const encountered: string[] = [];
+  let totalCost = 0;
+
+  for (const body of allBodies) {
+    if (body.id === origin.id || body.id === destination.id) continue;
+    if (body.type.startsWith('star')) continue;
+
+    const hillR = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type);
+    if (hillR <= 0) continue;
+
+    const bodyPos = getBodyPositionAU(body, departureDayOffset, allBodies);
+
+    // Check minimum distance from body center to the chord line segment
+    let minDistToChord = Infinity;
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const px = originPos.x + dx * t;
+      const py = originPos.y + dy * t;
+      const dist = Math.hypot(px - bodyPos.x, py - bodyPos.y);
+      if (dist < minDistToChord) minDistToChord = dist;
+      if (minDistToChord <= hillR) break; // Early exit
+    }
+
+    if (minDistToChord <= hillR) {
+      const bodyRadiusKm = estimateRadiusKm(body.mass, body.type);
+      const escKms = calculateEscapeVelocityKms(body.mass, bodyRadiusKm);
+      totalCost += escKms;
+      encountered.push(body.label);
+    }
+  }
+
+  return { hrsCostKms: Math.round(totalCost * 100) / 100, bodiesEncountered: encountered };
+}
+
+/**
  * Build a complete TravelPlan from user inputs.
  */
 export function buildTravelPlan(
@@ -192,14 +298,34 @@ export function buildTravelPlan(
   destination: SceneBody,
   deltaVBudgetKms: number,
   departureDayOffset: number,
-  allBodies: SceneBody[]
+  allBodies: SceneBody[],
+  starMassSolar = 1
 ): TravelPlan {
   const originRadiusKm = estimateRadiusKm(origin.mass, origin.type);
   const destRadiusKm = estimateRadiusKm(destination.mass, destination.type);
 
   const escapeOriginKms = calculateEscapeVelocityKms(origin.mass, originRadiusKm);
   const captureDestKms = calculateEscapeVelocityKms(destination.mass, destRadiusKm);
-  const excessDeltaVKms = Math.round((deltaVBudgetKms - escapeOriginKms - captureDestKms) * 100) / 100;
+
+  // HRS/SOI traversal cost
+  const { hrsCostKms, bodiesEncountered } = calculateHrsTraversalCostKms(
+    origin, destination, departureDayOffset, allBodies, starMassSolar
+  );
+
+  const totalCostKms = escapeOriginKms + captureDestKms + hrsCostKms;
+  const excessDeltaVKms = Math.round((deltaVBudgetKms - totalCostKms) * 100) / 100;
+
+  let failureReason: string | undefined;
+  if (deltaVBudgetKms < escapeOriginKms) {
+    failureReason = `Insufficient ΔV to escape ${origin.label} (${escapeOriginKms.toFixed(2)} km/s required).`;
+  } else if (deltaVBudgetKms < escapeOriginKms + captureDestKms) {
+    failureReason = `Insufficient ΔV to capture at ${destination.label} (${captureDestKms.toFixed(2)} km/s required).`;
+  } else if (excessDeltaVKms <= 0) {
+    failureReason = `HRS/SOI traversal cost (${hrsCostKms.toFixed(2)} km/s) exceeds remaining budget.`;
+    if (bodiesEncountered.length > 0) {
+      failureReason += ` Encountered: ${bodiesEncountered.join(', ')}.`;
+    }
+  }
 
   const synodicPeriodDays = calculateSynodicPeriodDays(origin.periodDays, destination.periodDays);
   const nextWindowDayOffset = findNextWindowDayOffset(
@@ -220,6 +346,11 @@ export function buildTravelPlan(
         )
       : null;
 
+  if (!window && excessDeltaVKms > 0) {
+    failureReason = (failureReason ? failureReason + ' ' : '') +
+      'Transfer window not found within search horizon (10 years).';
+  }
+
   return {
     originId: origin.id,
     destinationId: destination.id,
@@ -233,5 +364,8 @@ export function buildTravelPlan(
     synodicPeriodDays,
     nextWindowDayOffset,
     isPossible: excessDeltaVKms > 0 && window !== null,
+    failureReason,
+    hrsCostKms,
+    totalCostKms,
   };
 }

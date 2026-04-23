@@ -1,6 +1,9 @@
 import type { AppState, SceneBody, ZoneBoundaries } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
 import { logScaleDistance, resetCamera } from './camera';
+import { hillSphereAU } from './travelPhysics';
+import { tickTravelTimeline } from './travelPlanner';
+import { getBodyPositionAU } from './travelPhysics';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -49,6 +52,8 @@ export function initRenderer(state: AppState): () => void {
       const direction = state.isReversed ? -1 : 1;
       state.simDayOffset += dt * state.speed * direction;
     }
+
+    tickTravelTimeline(state, dt);
 
     try {
       initCamera();
@@ -237,24 +242,125 @@ function drawTravelPlannerOverlays(
   const tp = state.travelPlanner;
   if (!tp || !tp.isActive) return;
 
+  const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+
+  function getScreenPos(bodyId: string | null): { x: number; y: number } | null {
+    if (!bodyId) return null;
+    const frame = frames.get(bodyId);
+    if (!frame) return null;
+    return { x: frame.x, y: frame.y };
+  }
+
   function drawRing(bodyId: string | null, color: string) {
     if (!bodyId) return;
+    const body = state.bodies.find(b => b.id === bodyId);
+    if (!body) return;
     const frame = frames.get(bodyId);
     if (!frame) return;
-    const r = Math.max(frame.distPx + 6, 14);
+
+    const visualR = body.radiusPx * state.camera.zoom;
+    const fixedR = Math.max(visualR + 6, 14);
+
+    // Convert Hill sphere AU radius to screen pixels using the local
+    // linear scale of the log-distance function: d/da[log10(a+1)*80] = 80/((a+1)*ln10)
+    const hillAU = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type);
+    const localScale = 80 / ((body.distanceAU + 1) * Math.LN10);
+    const hillPx = hillAU * localScale * state.camera.zoom;
+
+    const r = hillPx > visualR * 1.5 ? hillPx : fixedR;
 
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.globalAlpha = 0.85;
     ctx.beginPath();
     ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Faint fill when Hill sphere is the active radius
+    if (hillPx > visualR * 1.5) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.04;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 
   drawRing(tp.originId, '#4ade80'); // green
   drawRing(tp.destinationId, '#fb923c'); // orange
+
+  const originPos = getScreenPos(tp.originId);
+  const destPos = getScreenPos(tp.destinationId);
+  if (!originPos || !destPos) return;
+
+  const plan = tp.lastPlan;
+  const tl = tp.timeline;
+
+  if (plan?.isPossible && tl.travelDayOffset >= 0) {
+    // Transfer chord with travelled/untravelled segments
+    const t = tl.travelDayOffset / plan.pessimisticArrivalDays;
+    const mx = originPos.x + (destPos.x - originPos.x) * t;
+    const my = originPos.y + (destPos.y - originPos.y) * t;
+
+    // Travelled segment (solid)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(96,165,250,0.75)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(originPos.x, originPos.y);
+    ctx.lineTo(mx, my);
+    ctx.stroke();
+
+    // Untravelled segment (dashed)
+    ctx.strokeStyle = 'rgba(96,165,250,0.25)';
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(mx, my);
+    ctx.lineTo(destPos.x, destPos.y);
+    ctx.stroke();
+
+    // Spacecraft chevron at split point
+    const angle = Math.atan2(destPos.y - originPos.y, destPos.x - originPos.x);
+    ctx.fillStyle = 'rgba(251,146,60,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
+    ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
+    ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  } else {
+    // Distance line when no plan or impossible
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(originPos.x, originPos.y);
+    ctx.lineTo(destPos.x, destPos.y);
+    ctx.stroke();
+
+    // Distance label
+    const midX = (originPos.x + destPos.x) / 2;
+    const midY = (originPos.y + destPos.y) / 2;
+    const oAU = getBodyPositionAU(state.bodies.find(b => b.id === tp.originId)!, state.simDayOffset, state.bodies);
+    const dAU = getBodyPositionAU(state.bodies.find(b => b.id === tp.destinationId)!, state.simDayOffset, state.bodies);
+    const distAU = Math.hypot(dAU.x - oAU.x, dAU.y - oAU.y);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${distAU.toFixed(2)} AU`, midX, midY + 14);
+    ctx.restore();
+  }
 }
 
 function drawBody(
