@@ -1,9 +1,8 @@
 import type { AppState, SceneBody, ZoneBoundaries } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
 import { logScaleDistance, resetCamera } from './camera';
-import { hillSphereAU } from './travelPhysics';
+import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU } from './travelPhysics';
 import { tickTravelTimeline } from './travelPlanner';
-import { getBodyPositionAU } from './travelPhysics';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -149,6 +148,50 @@ function draw(
 
   // Travel Planner selection rings (drawn on top)
   drawTravelPlannerOverlays(ctx, state, frames);
+
+  // Body hover tooltip (FRD-062)
+  updateBodyTooltip(state);
+}
+
+/** Update the HTML body tooltip based on hovered body (FRD-062) */
+function updateBodyTooltip(state: AppState): void {
+  const tooltip = document.getElementById('body-tooltip');
+  if (!tooltip) return;
+
+  if (!state.hoveredBodyId) {
+    tooltip.style.display = 'none';
+    return;
+  }
+
+  const body = state.bodies.find(b => b.id === state.hoveredBodyId);
+  if (!body) {
+    tooltip.style.display = 'none';
+    return;
+  }
+
+  const starMass = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+  const hs = hillSphereAU(body.mass, starMass, body.distanceAU, body.type);
+  const esc = calculateEscapeVelocityKms(body.mass, estimateRadiusKm(body.mass, body.type));
+
+  tooltip.innerHTML = `
+    <div class="tt-title">${body.label} (${body.type})</div>
+    <div class="tt-row"><span class="tt-label">Distance</span><span class="tt-value">${body.distanceAU.toFixed(2)} AU</span></div>
+    <div class="tt-row"><span class="tt-label">Mass</span><span class="tt-value">${body.mass.toFixed(2)} M⊕</span></div>
+    ${hs > 0 ? `<div class="tt-row"><span class="tt-label">Hill Sphere</span><span class="tt-value">${hs.toExponential(3)} AU</span></div>` : ''}
+    ${esc > 0 ? `<div class="tt-row"><span class="tt-label">Esc Vel</span><span class="tt-value">${esc.toFixed(2)} km/s</span></div>` : ''}
+  `;
+
+  // Position near cursor with offset, clamped to viewport
+  const offset = 14;
+  let left = state.lastMouseX + offset;
+  let top = state.lastMouseY + offset;
+  const rect = tooltip.getBoundingClientRect();
+  if (left + rect.width > state.width) left = state.lastMouseX - rect.width - offset;
+  if (top + rect.height > state.height) top = state.lastMouseY - rect.height - offset;
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+  tooltip.style.display = 'block';
 }
 
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
@@ -242,32 +285,81 @@ function drawTravelPlannerOverlays(
   const tp = state.travelPlanner;
   if (!tp || !tp.isActive) return;
 
-  const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+  const { camera, bodies, width, height, simDayOffset } = state;
+  const starMassSolar = bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
 
-  function getScreenPos(bodyId: string | null): { x: number; y: number } | null {
-    if (!bodyId) return null;
-    const frame = frames.get(bodyId);
-    if (!frame) return null;
-    return { x: frame.x, y: frame.y };
+  // Star position on screen (all orbits are centred here)
+  const starOriginX = width / 2 - camera.x * camera.zoom;
+  const starOriginY = height / 2 - camera.y * camera.zoom;
+
+  // Compute a body's screen position at any arbitrary day offset.
+  // Mirrors computeBodyFrames logic but for a single body at a chosen time.
+  function screenPosAtTime(bodyId: string, dayOffset: number): { x: number; y: number } | null {
+    const body = bodies.find(b => b.id === bodyId);
+    if (!body) return null;
+    if (!body.parentId) {
+      const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+      const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * camera.zoom : 0;
+      return { x: starOriginX + Math.cos(angle) * distPx, y: starOriginY + Math.sin(angle) * distPx };
+    }
+    const parent = bodies.find(b => b.id === body.parentId);
+    if (!parent) return null;
+    const parentPos = screenPosAtTime(parent.id, dayOffset);
+    if (!parentPos) return null;
+    const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+    const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0;
+    const maxMoonDist = logScaleDistance(parent.distanceAU, 80) * camera.zoom * 0.25;
+    const moonDistPx = Math.max(6, Math.min(maxMoonDist, rawMoonDist));
+    return { x: parentPos.x + Math.cos(angle) * moonDistPx, y: parentPos.y + Math.sin(angle) * moonDistPx };
   }
 
-  function drawRing(bodyId: string | null, color: string) {
+  // Current screen position of a body (from precomputed frames)
+  function currentScreenPos(bodyId: string | null): { x: number; y: number } | null {
+    if (!bodyId) return null;
+    const frame = frames.get(bodyId);
+    return frame ? { x: frame.x, y: frame.y } : null;
+  }
+
+  // Hill sphere radius in screen pixels for a body
+  function hillPxFor(body: { mass: number; distanceAU: number; type: string }): number {
+    const hillAU = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type as import('./types').BodyType);
+    if (hillAU <= 0) return 0;
+    const localScale = 80 / ((body.distanceAU + 1) * Math.LN10);
+    return hillAU * localScale * camera.zoom;
+  }
+
+  // Passive SOI rings — faint dashed circles around every planet-class body
+  // (not stars, not moons) so each orbit ring has its gravitational domain visible.
+  ctx.save();
+  ctx.setLineDash([2, 5]);
+  ctx.lineWidth = 0.7;
+  for (const body of bodies) {
+    if (body.type.startsWith('star') || body.type === 'moon') continue;
+    if (body.id === tp.originId || body.id === tp.destinationId) continue;
+    const frame = frames.get(body.id);
+    if (!frame) continue;
+    const hillPx = hillPxFor(body);
+    const visualR = body.radiusPx * camera.zoom;
+    if (hillPx < visualR * 1.3) continue; // skip if SOI is barely larger than the body dot
+    ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(frame.x, frame.y, hillPx, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Selection rings for origin (green) and destination (orange)
+  function drawSelectionRing(bodyId: string | null, color: string) {
     if (!bodyId) return;
-    const body = state.bodies.find(b => b.id === bodyId);
+    const body = bodies.find(b => b.id === bodyId);
     if (!body) return;
     const frame = frames.get(bodyId);
     if (!frame) return;
 
-    const visualR = body.radiusPx * state.camera.zoom;
-    const fixedR = Math.max(visualR + 6, 14);
-
-    // Convert Hill sphere AU radius to screen pixels using the local
-    // linear scale of the log-distance function: d/da[log10(a+1)*80] = 80/((a+1)*ln10)
-    const hillAU = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type);
-    const localScale = 80 / ((body.distanceAU + 1) * Math.LN10);
-    const hillPx = hillAU * localScale * state.camera.zoom;
-
-    const r = hillPx > visualR * 1.5 ? hillPx : fixedR;
+    const visualR = body.radiusPx * camera.zoom;
+    const hillPx = hillPxFor(body);
+    const r = hillPx > visualR * 1.5 ? hillPx : Math.max(visualR + 6, 14);
 
     ctx.save();
     ctx.strokeStyle = color;
@@ -278,7 +370,6 @@ function drawTravelPlannerOverlays(
     ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Faint fill when Hill sphere is the active radius
     if (hillPx > visualR * 1.5) {
       ctx.fillStyle = color;
       ctx.globalAlpha = 0.04;
@@ -287,47 +378,71 @@ function drawTravelPlannerOverlays(
       ctx.arc(frame.x, frame.y, r, 0, Math.PI * 2);
       ctx.fill();
     }
-
     ctx.restore();
   }
 
-  drawRing(tp.originId, '#4ade80'); // green
-  drawRing(tp.destinationId, '#fb923c'); // orange
+  drawSelectionRing(tp.originId, '#4ade80');
+  drawSelectionRing(tp.destinationId, '#fb923c');
 
-  const originPos = getScreenPos(tp.originId);
-  const destPos = getScreenPos(tp.destinationId);
-  if (!originPos || !destPos) return;
+  // Nothing more to draw if only one body selected
+  const originCurrent = currentScreenPos(tp.originId);
+  const destCurrent = currentScreenPos(tp.destinationId);
+  if (!originCurrent || !destCurrent || !tp.originId || !tp.destinationId) return;
 
   const plan = tp.lastPlan;
   const tl = tp.timeline;
 
-  if (plan?.isPossible && tl.travelDayOffset >= 0) {
-    // Transfer chord with travelled/untravelled segments
-    const t = tl.travelDayOffset / plan.pessimisticArrivalDays;
-    const mx = originPos.x + (destPos.x - originPos.x) * t;
-    const my = originPos.y + (destPos.y - originPos.y) * t;
+  if (plan?.isPossible) {
+    // Chord endpoints are FIXED in time:
+    //   start = origin's position when the ship departed
+    //   end   = destination's position when the ship is expected to arrive
+    const departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset;
+    const arrivalDay = departureDay + plan.pessimisticArrivalDays;
 
-    // Travelled segment (solid)
+    const departurePos = screenPosAtTime(tp.originId, departureDay);
+    const arrivalPos = screenPosAtTime(tp.destinationId, arrivalDay);
+    if (!departurePos || !arrivalPos) return;
+
+    const progress = plan.pessimisticArrivalDays > 0
+      ? Math.max(0, Math.min(1, tl.travelDayOffset / plan.pessimisticArrivalDays))
+      : 0;
+    const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
+    const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
+
     ctx.save();
+
+    // Travelled segment (solid blue)
     ctx.strokeStyle = 'rgba(96,165,250,0.75)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(originPos.x, originPos.y);
+    ctx.moveTo(departurePos.x, departurePos.y);
     ctx.lineTo(mx, my);
     ctx.stroke();
 
-    // Untravelled segment (dashed)
+    // Remaining segment (dashed blue)
     ctx.strokeStyle = 'rgba(96,165,250,0.25)';
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.moveTo(mx, my);
-    ctx.lineTo(destPos.x, destPos.y);
+    ctx.lineTo(arrivalPos.x, arrivalPos.y);
     ctx.stroke();
 
-    // Spacecraft chevron at split point
-    const angle = Math.atan2(destPos.y - originPos.y, destPos.x - originPos.x);
+    // Arrival marker — small cross at the destination's predicted arrival position
+    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(251,146,60,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(arrivalPos.x - 5, arrivalPos.y);
+    ctx.lineTo(arrivalPos.x + 5, arrivalPos.y);
+    ctx.moveTo(arrivalPos.x, arrivalPos.y - 5);
+    ctx.lineTo(arrivalPos.x, arrivalPos.y + 5);
+    ctx.stroke();
+
+    // Spacecraft chevron at current position along chord
+    const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
     ctx.fillStyle = 'rgba(251,146,60,0.9)';
+    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
     ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
@@ -337,21 +452,21 @@ function drawTravelPlannerOverlays(
 
     ctx.restore();
   } else {
-    // Distance line when no plan or impossible
+    // No plan or impossible: dashed distance line between current positions
     ctx.save();
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
-    ctx.moveTo(originPos.x, originPos.y);
-    ctx.lineTo(destPos.x, destPos.y);
+    ctx.moveTo(originCurrent.x, originCurrent.y);
+    ctx.lineTo(destCurrent.x, destCurrent.y);
     ctx.stroke();
 
-    // Distance label
-    const midX = (originPos.x + destPos.x) / 2;
-    const midY = (originPos.y + destPos.y) / 2;
-    const oAU = getBodyPositionAU(state.bodies.find(b => b.id === tp.originId)!, state.simDayOffset, state.bodies);
-    const dAU = getBodyPositionAU(state.bodies.find(b => b.id === tp.destinationId)!, state.simDayOffset, state.bodies);
+    // Current AU distance label
+    const midX = (originCurrent.x + destCurrent.x) / 2;
+    const midY = (originCurrent.y + destCurrent.y) / 2;
+    const oAU = getBodyPositionAU(bodies.find(b => b.id === tp.originId)!, simDayOffset, bodies);
+    const dAU = getBodyPositionAU(bodies.find(b => b.id === tp.destinationId)!, simDayOffset, bodies);
     const distAU = Math.hypot(dAU.x - oAU.x, dAU.y - oAU.y);
 
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
@@ -360,6 +475,17 @@ function drawTravelPlannerOverlays(
     ctx.textBaseline = 'middle';
     ctx.fillText(`${distAU.toFixed(2)} AU`, midX, midY + 14);
     ctx.restore();
+
+    // Failure reason on canvas
+    if (plan?.failureReason) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(251,146,60,0.85)';
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(plan.failureReason, midX, midY + 28);
+      ctx.restore();
+    }
   }
 }
 

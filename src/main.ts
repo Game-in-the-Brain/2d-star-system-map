@@ -71,6 +71,9 @@ function createDefaultState(): AppState {
     height: window.innerHeight,
     gmNotes: '',
     travelPlanner: undefined,
+    hoveredBodyId: null,
+    lastMouseX: 0,
+    lastMouseY: 0,
   };
 }
 

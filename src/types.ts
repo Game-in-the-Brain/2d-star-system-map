@@ -152,6 +152,10 @@ export interface AppState {
   gmNotes?: string;
   /** Travel planner state (FRD-048) */
   travelPlanner?: TravelPlannerState;
+  /** FRD-062: hovered body for tooltip */
+  hoveredBodyId: string | null;
+  lastMouseX: number;
+  lastMouseY: number;
 }
 
 // FRD-046: Saved star page format

@@ -1,6 +1,6 @@
 import type { AppState } from './types';
 import { zoomTo, pan } from './camera';
-import { handleTravelPlannerClick, refreshTravelPanel } from './travelPlanner';
+import { handleTravelPlannerClick, refreshTravelPanel, findBodyAtScreenPos } from './travelPlanner';
 
 export function initInputHandlers(state: AppState, onReset: () => void): void {
   const canvas = state.canvas!;
@@ -91,8 +91,24 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
     isDragging = false;
   });
 
+  canvas.addEventListener('mousemove', (e) => {
+    const pos = getMousePos(e);
+    state.lastMouseX = pos.x;
+    state.lastMouseY = pos.y;
+
+    if (!isDragging) {
+      const body = findBodyAtScreenPos(pos.x, pos.y, state);
+      const prevId = state.hoveredBodyId;
+      state.hoveredBodyId = body?.id ?? null;
+      if (prevId !== state.hoveredBodyId) {
+        canvas.style.cursor = body ? 'pointer' : 'default';
+      }
+    }
+  });
+
   canvas.addEventListener('mouseleave', () => {
     isDragging = false;
+    state.hoveredBodyId = null;
   });
 
   canvas.addEventListener('touchstart', (e) => {

@@ -512,3 +512,40 @@ select.btn {
   border-radius: 2px;
   margin-top: -2px;
 }
+
+/* Body hover tooltip (FRD-062) */
+.body-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 50;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 160px;
+  transition: opacity 0.15s ease;
+}
+.body-tooltip .tt-title {
+  font-weight: 600;
+  color: #ffe4b5;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 2px;
+}
+.body-tooltip .tt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.body-tooltip .tt-label {
+  color: #9ca3af;
+}
+.body-tooltip .tt-value {
+  font-variant-numeric: tabular-nums;
+}
