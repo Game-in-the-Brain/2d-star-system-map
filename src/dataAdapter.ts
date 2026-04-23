@@ -91,9 +91,9 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
       colour: getSpectralColour(star.class),
       strokeColour: '#ffffff',
       angle,
-      periodDays: calculatePeriodDays(star.orbitDistance * 5),
+      periodDays: calculatePeriodDays(star.orbitDistance),
       isMainWorld: false,
-      velocityKms: calculateOrbitalVelocityKms(starMass, star.orbitDistance * 5),
+      velocityKms: calculateOrbitalVelocityKms(starMass, star.orbitDistance),
     });
   });
 

@@ -10,7 +10,7 @@ import { generateRandomSystem } from './generator';
 import { APP_FULL_VERSION } from './version';
 import { savePage, saveInteractivePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
 import { initEditor, setEditorSystem } from './editor';
-import { initTravelPlanner, createTravelPlannerState, refreshTravelPanel } from './travelPlanner';
+import { initTravelPlanner, createTravelPlannerState } from './travelPlanner';
 
 let currentPayload: MapPayload | null = null;
 
@@ -90,7 +90,13 @@ function loadSystemIntoState(state: AppState, payload: MapPayload): void {
     Date.UTC(payload.epoch.year, payload.epoch.month - 1, payload.epoch.day)
   );
   state.simDayOffset = 0;
-  state.bodies = buildSceneGraph(payload.starSystem);
+  try {
+    state.bodies = buildSceneGraph(payload.starSystem);
+  } catch (err) {
+    console.error('[main] buildSceneGraph failed:', err);
+    alert('Failed to build scene graph. Check console for details.');
+    return;
+  }
   state.zones = payload.starSystem.zones;
 
   // Update seed display
@@ -294,7 +300,12 @@ function main() {
     state.epochDate = new Date(
       Date.UTC(urlPayload.epoch.year, urlPayload.epoch.month - 1, urlPayload.epoch.day)
     );
-    state.bodies = buildSceneGraph(urlPayload.starSystem);
+    try {
+      state.bodies = buildSceneGraph(urlPayload.starSystem);
+    } catch (err) {
+      console.error('[main] buildSceneGraph failed for URL payload:', err);
+      alert('Failed to build scene graph from URL. Check console for details.');
+    }
   }
 
   resizeCanvas(state);
@@ -322,43 +333,10 @@ function main() {
     const expandBtn = document.getElementById('btn-expand-panel');
     const watermark = document.getElementById('version-watermark');
     const loading = document.getElementById('loading');
-    const journeyBtn = document.getElementById('btn-journey');
-    const travelPanel = document.getElementById('tab-travel');
-    const appDiv = document.getElementById('app');
-
-    // Detach travel panel from controls BEFORE hiding controls so it stays accessible
-    if (travelPanel && appDiv) {
-      appDiv.appendChild(travelPanel);
-      travelPanel.classList.add('travel-embed-overlay');
-    }
-
     if (controls) controls.style.display = 'none';
     if (expandBtn) expandBtn.style.display = 'none';
     if (watermark) watermark.style.display = 'none';
     if (loading) loading.style.display = 'none';
-
-    // Journey FAB toggles the travel overlay
-    if (journeyBtn) {
-      journeyBtn.style.display = 'flex';
-      journeyBtn.addEventListener('click', () => {
-        if (!travelPanel) return;
-        const isOpen = travelPanel.style.display === 'flex';
-        if (isOpen) {
-          travelPanel.style.display = 'none';
-          journeyBtn.textContent = '✈';
-          journeyBtn.title = 'Travel Planner';
-          journeyBtn.setAttribute('aria-label', 'Open Travel Planner');
-          if (state.travelPlanner) state.travelPlanner.isActive = false;
-        } else {
-          travelPanel.style.display = 'flex';
-          journeyBtn.textContent = '✕';
-          journeyBtn.title = 'Close';
-          journeyBtn.setAttribute('aria-label', 'Close Travel Planner');
-          if (state.travelPlanner) state.travelPlanner.isActive = true;
-          refreshTravelPanel(state);
-        }
-      });
-    }
 
     // Auto-start animation if a system is loaded
     if (currentPayload) {
