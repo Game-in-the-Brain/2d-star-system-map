@@ -206,3 +206,50 @@ export interface TravelPlannerState {
   isActive: boolean;
   timeline: TravelTimelineState;
 }
+
+// FRD-060 §30: SOI-Safe Routing
+export interface TravelBody {
+  id: string;
+  label: string;
+  distanceAU: number;
+  angleRad: number;
+  massEM: number;
+  hillRadiusAU: number;
+}
+
+export type RoutingMode = 'direct' | 'soi-safe';
+
+export interface TravelInput {
+  origin: TravelBody;
+  destination: TravelBody;
+  accelG: number;
+  routingMode: RoutingMode;
+  departureOffsetDays: number;
+}
+
+export interface SoiHit {
+  bodyId: string;
+  bodyLabel: string;
+  soiRadiusAU: number;
+  chordAU: number;
+  detourAddedAU: number;
+}
+
+export interface WaitResult {
+  waitDays: number;
+  pathDistanceAU: number;
+  flightTimeDays: number;
+  totalTimeDays: number;
+  clearAtDeparture: boolean;
+}
+
+export interface TravelResult {
+  routingMode: RoutingMode;
+  departureOffsetDays: number;
+  pathDistanceAU: number;
+  flightTimeDays: number;
+  totalTimeDays: number;
+  soiIntersections: SoiHit[];
+  detourAddedAU: number;
+  waitAlternative: WaitResult | null;
+}

@@ -1468,62 +1468,115 @@ tickTravelTimeline(state, dt);
 
 ### 12.10 Canvas Overlays — drawTravelPlannerOverlays
 
-Called last in `draw()`. Only when `tp.isActive`.
+Called last in `draw()`. Only when `tp.isActive`. Draws in this order (each layer on top of the previous):
 
-**A. Selection rings** (always, when origin/destination selected):
-```
-Origin ring:      colour #4ade80, dashed [4,4], lineWidth 2
-Destination ring: colour #fb923c, dashed [4,4], lineWidth 2
-Ring radius: Math.max((body.radiusPx * camera.zoom) + 4, 8)
-```
+#### A. Passive SOI rings (all planet-class bodies)
 
-**B. Transfer chord** (when `lastPlan.isPossible && timeline.travelDayOffset >= 0`):
-
-Positions are computed at two fixed sim-day offsets using `bodyScreenPosAtTime()`:
-```
-departurePos = position of origin at plan.departureDayOffset
-arrivalPos   = position of destination at plan.departureDayOffset + plan.pessimisticArrivalDays
-```
-
-`bodyScreenPosAtTime(body, dayOffset, bodies, originX, originY, zoom)` mirrors `computeBodyFrames` logic for a single body at an arbitrary day offset.
+When travel planner is active, every body that is not a star or moon gets a faint white dashed circle showing its Hill sphere radius. This gives each orbit ring a visible gravitational domain.
 
 ```
-t = tl.travelDayOffset / plan.pessimisticArrivalDays   (0–1)
-splitX = departurePos.x + (arrivalPos.x - departurePos.x) * t
-splitY = departurePos.y + (arrivalPos.y - departurePos.y) * t
+For each body where type ∉ {'star-primary','star-companion','moon'}
+  AND body is not the current originId or destinationId:
+
+  hillAU = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type)
+  localScale = 80 / ((body.distanceAU + 1) * Math.LN10)
+  hillPx = hillAU * localScale * camera.zoom
+
+  Skip if hillPx < body.radiusPx * camera.zoom * 1.3  (too small to be meaningful)
+
+  strokeStyle: rgba(255,255,255,0.13)
+  lineWidth: 0.7
+  setLineDash([2,5])
+  globalAlpha: 0.6
+  arc(frame.x, frame.y, hillPx, 0, 2π)
+```
+
+`hillSphereAU` is defined in `travelPhysics.ts` (see §12.11).
+
+#### B. Selection rings — Hill sphere scaled
+
+Origin ring (green `#4ade80`) and destination ring (orange `#fb923c`). Ring radius is the Hill sphere screen radius when that is > 1.5× the body's visual radius; otherwise uses a fixed minimum.
+
+```
+hillAU   = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type)
+localScale = 80 / ((body.distanceAU + 1) * Math.LN10)
+hillPx   = hillAU * localScale * camera.zoom
+visualR  = body.radiusPx * camera.zoom
+fixedR   = max(visualR + 6, 14)
+
+r = hillPx > visualR * 1.5 ? hillPx : fixedR
+
+strokeStyle: color, lineWidth 1.5, setLineDash([5,4]), globalAlpha 0.85
+arc(frame.x, frame.y, r, 0, 2π)
+
+If Hill sphere is active (hillPx > visualR * 1.5):
+  fillStyle: color, globalAlpha 0.04, solid fill of same arc
+```
+
+Stars and moons return `hillPx = 0` from `hillSphereAU` and always use `fixedR`.
+
+#### C. Transfer chord — FIXED spatial endpoints
+
+The chord endpoints are **frozen in time** at departure and estimated arrival. The bodies continue orbiting; the chord does not move.
+
+**`screenPosAtTime(bodyId, dayOffset)`** — helper inside `drawTravelPlannerOverlays`:
+```
+for L1 bodies (no parentId):
+  angle  = body.angle + 2π * dayOffset / body.periodDays
+  distPx = logScaleDistance(body.distanceAU, 80) * camera.zoom
+  return { x: starOriginX + cos(angle)*distPx, y: starOriginY + sin(angle)*distPx }
+
+for moons: recursive parent lookup (same clamped moon-distance formula as computeBodyFrames)
+```
+
+Chord endpoints:
+```
+departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset
+arrivalDay   = departureDay + plan.pessimisticArrivalDays
+
+departurePos = screenPosAtTime(tp.originId, departureDay)
+arrivalPos   = screenPosAtTime(tp.destinationId, arrivalDay)
+```
+
+Drawn only when `plan.isPossible`:
+```
+progress = clamp(tl.travelDayOffset / plan.pessimisticArrivalDays, 0, 1)
+mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress
+my = departurePos.y + (arrivalPos.y - departurePos.y) * progress
 
 Travelled segment (departurePos → split):
-  solid line, rgba(96,165,250,0.75), lineWidth 1.5, no dash
+  solid, rgba(96,165,250,0.75), lineWidth 1.5
 
 Remaining segment (split → arrivalPos):
   dashed [5,5], rgba(96,165,250,0.25), lineWidth 1.5
 
-Arrival marker circle at arrivalPos:
-  radius 6, dashed [3,3], rgba(251,146,60,0.6), lineWidth 1.5
+Arrival marker cross at arrivalPos:
+  5px horizontal + 5px vertical lines, rgba(251,146,60,0.6), lineWidth 1
 ```
 
-**C. Spacecraft chevron** at `(splitX, splitY)`:
-```
-Direction = atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x)
-Colour: #60a5fa
+#### D. Spacecraft chevron at split point
 
-Triangle: tip 7px forward, wings 5px back-left and 5px back-right of centre
-Label below: "Launch" if t=0, else "Day N"
-  font-size 10px, background rgba(0,0,0,0.6), rounded box
 ```
-
-**D. Distance line** (when `!lastPlan.isPossible` OR no plan yet but both selected):
-```
-Line from origin current pos → destination current pos
-Colour rgba(255,255,255,0.35), dashed [6,6], lineWidth 1
-Midpoint label: "{X.XX} AU" in a dark rounded box, font 11px
+angle = atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x)
+fillStyle: rgba(251,146,60,0.9)
+Triangle: tip = (mx + cos(angle)*6, my + sin(angle)*6)
+          wing1 = (mx + cos(angle+2.5)*4, my + sin(angle+2.5)*4)
+          wing2 = (mx + cos(angle-2.5)*4, my + sin(angle-2.5)*4)
 ```
 
-**E. Failure reason** on canvas (when `!lastPlan.isPossible`):
+#### E. Distance line (no plan or impossible)
+
 ```
-Draw text block below the distance line midpoint:
-  lastPlan.failureReason
-  font 11px, colour #ef4444, background rgba(0,0,0,0.7), padded rounded box
+Line from origin CURRENT pos → destination CURRENT pos
+rgba(255,255,255,0.35), dashed [6,6], lineWidth 1
+Midpoint label: "{X.XX} AU", font 10px, rgba(255,255,255,0.6), centred +14px below midpoint
+```
+
+#### F. Failure reason on canvas (when `plan.failureReason` exists)
+
+```
+plan.failureReason text
+font 10px system-ui, rgba(251,146,60,0.85), centred +28px below distance midpoint
 ```
 
 ### 12.11 Physics — travelPhysics.ts
@@ -1555,11 +1608,25 @@ export function findArrivalWindow(origin, dest, departureDayOffset, excessVKms, 
 // Goal-seek: find first day where reachable range >= current separation
 // pathFactor = 1 + 0.3 * sin(angularSeparation/2)  — pessimistic correction
 
-export function buildTravelPlan(origin, dest, deltaVBudgetKms, departureDayOffset, allBodies): TravelPlan
+export function buildTravelPlan(origin, dest, deltaVBudgetKms, departureDayOffset, allBodies, starMassSolar?): TravelPlan
 // Orchestrates all calculations. Sets failureReason when:
 //   - deltaVBudgetKms < escapeOriginKms
 //   - deltaVBudgetKms < escapeOriginKms + captureDestKms
+//   - HRS/SOI traversal cost exhausts remaining budget (see below)
 //   - no arrival window found within maxSearchDays
+
+export function hillSphereAU(bodyMassEM: number, starMassSolar: number, distanceAU: number, bodyType: BodyType): number
+// Hill sphere radius in AU: distanceAU * cbrt(bodyMassEM / (3 * starMassSolar * 332946))
+// Returns 0 for star-* and moon types, and when distanceAU <= 0.
+
+export function calculateHrsTraversalCostKms(
+  origin: SceneBody, destination: SceneBody,
+  departureDayOffset: number, allBodies: SceneBody[], starMassSolar: number
+): { hrsCostKms: number; bodiesEncountered: string[] }
+// Samples the straight-line chord from origin→destination at ~0.02 AU resolution.
+// For each non-star, non-origin, non-destination body whose Hill sphere the chord
+// crosses, adds that body's escape velocity to the total cost.
+// Used by buildTravelPlan to compute total ΔV cost before checking excess budget.
 ```
 
 ### 12.12 Mobile — Panel Collapse Covers Travel Tab
@@ -1916,9 +1983,55 @@ When `tp.isActive` and the pointer is over a hittable body, set `canvas.style.cu
 
 ---
 
-## 26. Removed — Hill Sphere Overlay
+## 26. Implemented — Hill Sphere SOI Rings
 
-Hill sphere rings were previously specified here but are **not implemented** in the MWG reference travel planner. Do not implement §26 (passive Hill sphere rings, `hillSphereAU()`, `drawAllHillSpheres()`, or `state.starMassSolar`). The selection rings use a fixed minimum radius as specified in §12.10.
+Hill sphere rings **are implemented** as of the current build. This section supersedes the earlier "Removed" notice.
+
+### 26.1 hillSphereAU() — travelPhysics.ts
+
+```typescript
+const SOLAR_TO_EM = 332946;
+
+export function hillSphereAU(
+  bodyMassEM: number,
+  starMassSolar: number,
+  distanceAU: number,
+  bodyType: BodyType
+): number {
+  if (bodyType.startsWith('star') || bodyType === 'moon' || distanceAU <= 0) return 0;
+  const massRatio = bodyMassEM / (3 * starMassSolar * SOLAR_TO_EM);
+  return distanceAU * Math.cbrt(massRatio);
+}
+```
+
+The Hill sphere (Roche limit approximation) gives the radius in AU within which a body gravitationally dominates over the primary star. Stars and moons return 0 — they are excluded from SOI ring display.
+
+### 26.2 Log-scale local derivative for AU→px conversion
+
+The 2D map uses `logScaleDistance(au) = log10(au+1) * 80`. The AU-to-pixel conversion rate at a given orbital distance is the derivative:
+
+```
+localScale = 80 / ((distanceAU + 1) * Math.LN10)
+hillScreenPx = hillSphereAU(body) * localScale * camera.zoom
+```
+
+This gives the correct screen-space radius for the Hill sphere at the body's position without needing to re-project via the full log-scale formula.
+
+### 26.3 Passive rings (all planet bodies when travel planner active)
+
+See §12.10-A. All non-star, non-moon bodies get a faint passive SOI ring when the travel planner tab is open. Skip condition: `hillPx < body.radiusPx * camera.zoom * 1.3` (below this threshold the ring would be indistinguishable from the body dot).
+
+### 26.4 Selection rings (origin and destination)
+
+See §12.10-B. The Hill sphere radius is compared against 1.5× the body's visual radius. If the Hill sphere is larger, it drives the ring radius and gets a faint colour fill. Otherwise the fixed minimum (`visualR + 6`, floor 14px) is used. This ensures even tiny dwarfs have a visible selection ring.
+
+### 26.5 No `state.starMassSolar` field required
+
+`starMassSolar` is looked up on demand inside `drawTravelPlannerOverlays` with:
+```typescript
+const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+```
+No extra field on `AppState` is needed.
 
 ---
 
@@ -1928,7 +2041,7 @@ A two-phase pointer/touch selection algorithm was previously specified here. The
 
 ---
 
-## 29. Hill Sphere / SOI Traversal Cost (FRD-061 Extension)
+## 28. Hill Sphere / SOI Traversal Cost
 
 ### 29.1 Rationale
 
@@ -1981,7 +2094,7 @@ For systems with many bodies, the chord sampling can be expensive. Early-exit th
 
 ---
 
-## 28. QA Items — Travel Planner (Revised)
+## 29. QA Items — Travel Planner
 
 ### QA-TP-01 — Map fully usable with controls collapsed
 **Requirement**: When `#controls` is collapsed (only the FAB visible), the canvas accepts pan, zoom, and travel-planner click events normally. Travel tab selection state (`tp.isActive`, `tp.originId`, `tp.destinationId`) is preserved across panel collapse/expand cycles.  
@@ -2006,6 +2119,144 @@ For systems with many bodies, the chord sampling can be expensive. Early-exit th
 ### QA-TP-06 — Empty-space click clears selection
 **Requirement**: Clicking on empty canvas space (no body within hit radius) while the travel planner is active clears `tp.originId`, `tp.destinationId`, and `tp.lastPlan`. The travel results section hides and the panel reverts to the "select origin" empty state.  
 **Test**: Select two bodies, click empty space — both selections cleared; calculate button disabled; results hidden.
+
+### QA-TP-07 — Hill sphere selection ring scales with body mass
+**Requirement**: When a Gas V (large mass) is selected as origin, the green dashed ring radius must be noticeably larger than when a dwarf planet (tiny mass) is selected. For bodies where `hillPx < visualR * 1.5`, the ring falls back to `visualR + 6` minimum.  
+**Test**: Select a gas giant → large green ring. Deselect, select a dwarf → smaller ring (fixed minimum). Sizes must visually differ.
+
+### QA-TP-08 — Passive SOI rings appear for planet bodies
+**Requirement**: When the Travel tab is active, all non-star non-moon non-selected bodies with a meaningful Hill sphere (`hillPx ≥ body.radiusPx * camera.zoom * 1.3`) show a faint white dashed SOI circle. Rings disappear when the travel tab is deactivated.  
+**Test**: Open Travel tab — faint dashed rings visible around gas giants and larger dwarfs. Switch to System Editor tab — rings disappear immediately.
+
+### QA-TP-09 — Chord endpoints are fixed in space
+**Requirement**: After Calculate Transfer, the blue chord goes from origin's departure-time position to destination's arrival-time position. As the timeline plays and bodies orbit, the chord endpoints do NOT move — only the spacecraft chevron slides along the fixed chord.  
+**Test**: Calculate a plan. Start timeline. Pan the camera — chord holds its position relative to the star. Observe bodies drifting off chord endpoints as time advances.
+
+### QA-TP-10 — Arrival marker at destination's future position
+**Requirement**: A small orange cross is drawn at `screenPosAtTime(destinationId, departureDay + pessimisticArrivalDays)`. This is distinct from the destination body's current animated position.  
+**Test**: Set a long-duration transfer (months). Advance time midway — the destination body has moved away from the orange cross marker. The cross stays at the predicted arrival point.
+
+---
+
+## 30. Planned — SOI-Safe Routing (FRD-048)
+
+**Status:** 📋 Planned — not yet implemented.  
+**Isolation guarantee:** Zero changes to existing files except one button insertion in `src/uiControls.ts` and additive-only type additions to `src/types.ts`. The entire feature tree hangs off those two hooks and lives in three new files. Revert by deleting those files and the one button — the renderer is unaware of it.
+
+### 29.1 Overview
+
+Extends the existing Hohmann-transfer travel planner with a **SOI-Safe routing mode** that detects when the straight-line chord crosses another body's sphere of influence, and offers two resolutions: a **detour arc** (adds AU, departs now) or a **wait for clear window** (waits N days for bodies to rotate clear).
+
+The existing `buildTravelPlan` and the HRS traversal cost already compute Hill-sphere crossings. This feature adds the UI affordances and the detour/wait math as a distinct, independently testable layer.
+
+### 29.2 New files
+
+| File | Purpose |
+|------|---------|
+| `src/travelCalc.ts` | Brachistochrone math, body geometry, `TravelBody` types. Pure math — no DOM. |
+| `src/soiChecker.ts` | Laplace SOI radius, line-circle intersection, detour approximation, clear-window search. No renderer coupling. |
+| `src/travelPanel.ts` | DOM panel, routing-mode toggle, result display. Delegates entirely to the above two files. |
+
+### 29.3 SOI radius formula
+
+The Laplace SOI (used for transit, not for orbital placement) is distinct from the Hill sphere:
+
+```typescript
+// r_SOI = a × (m_planet / M_star)^(2/5)
+export function soiRadiusAU(orbitalAU: number, planetEM: number, starEM: number): number {
+  return orbitalAU * Math.pow(planetEM / starEM, 2 / 5);
+}
+```
+
+The Hill sphere (`hillSphereAU` in §26.1) uses `cbrt` and the factor `1/3`; Laplace SOI uses the `2/5` exponent and no factor. For display the Hill sphere is used (§26); for routing the Laplace SOI is used here.
+
+### 29.4 Line-circle intersection
+
+```typescript
+// Returns chord length (AU) if segment A→B crosses a circle at C with radius r.
+// Returns 0 if no intersection or intersection outside the segment.
+export function chordThroughCircle(ax,ay,bx,by,cx,cy,r): number
+```
+
+Standard parametric line-circle test. The two intersection parameters `t1`, `t2` must both lie in `[0,1]` (the segment); clamp-and-compare to handle partial intersections.
+
+Detour approximation:
+```typescript
+// Conservative tangent-arc bypass estimate:
+// detour ≈ 2√(halfChord² + r²) − chord
+export function detourAroundCircle(chordAU: number, soiRadiusAU: number): number
+```
+
+### 29.5 Clear-window search
+
+```typescript
+// Advances all body angles in 0.5-day steps using Kepler's third law.
+// Returns first departure offset where chord has no SOI intersections,
+// or null if none found within maxSearchDays (default 365).
+export function findClearDepartureWindow(
+  origin, destination, obstacles, starEM, starMassSun,
+  maxSearchDays?, stepDays?
+): { waitDays: number; positionsAtDeparture: TravelBody[] } | null
+```
+
+`orbitalPeriodDays` (already in `src/orbitMath.ts`) is the only read-only import from an existing file.
+
+### 29.6 Panel layout
+
+```
+┌─────────────────────────────────────────┐
+│ ⏱ Travel Calculator              [✕]   │
+├─────────────────────────────────────────┤
+│ From: [dropdown]   To: [dropdown]       │
+│ Accel: [____] G                         │
+│ Routing: ○ Direct   ● SOI-Safe          │
+├─────────────────────────────────────────┤
+│ Distance:    2.31 AU                    │
+│ Flight time: 4.2 days                   │
+│ ─── SOI INTERSECTIONS ─────────────────│
+│ ⚠ Jupiter  +0.08 AU  +0.6 days         │
+│ ─── DETOUR ────────────────────────────│
+│ Path: 2.39 AU   Total: 4.8d  [Detour]  │
+│ ─── WAIT ──────────────────────────────│
+│ Wait 18.5d → clear  Total: 22.6d [Wait]│
+└─────────────────────────────────────────┘
+```
+
+- SOI / Detour / Wait sections hidden entirely in Direct mode (not just empty).
+- Recalculate fires on any input change — no submit button.
+- "Use Detour" / "Use Wait" are v1 copy-to-clipboard affordances. Canvas path overlay deferred to v1.1.
+- Panel state held in module-level variables inside `travelPanel.ts` — no localStorage, no renderer state.
+
+### 29.7 Entry point (only touch to existing files)
+
+```typescript
+// In src/uiControls.ts — single insertion, no edits to existing logic:
+const travelBtn = document.createElement('button');
+travelBtn.id = 'travel-calc-btn';
+travelBtn.textContent = '⏱ Travel Calc';
+travelBtn.addEventListener('click', () => openTravelPanel(currentSceneBodies, starMassSolar));
+controlsContainer.appendChild(travelBtn);
+```
+
+### 29.8 Additive types (src/types.ts)
+
+```typescript
+// Additive only — no existing type changed:
+export interface TravelBody { id, label, distanceAU, angleRad, massEM, hillRadiusAU }
+export interface TravelInput { origin, destination, accelG, routingMode, departureOffsetDays }
+export interface TravelResult { routingMode, departureOffsetDays, pathDistanceAU,
+  flightTimeDays, totalTimeDays, soiIntersections, detourAddedAU, waitAlternative? }
+export interface SoiHit { bodyId, bodyLabel, soiRadiusAU, chordAU, detourAddedAU }
+export interface WaitResult { waitDays, pathDistanceAU, flightTimeDays, totalTimeDays, clearAtDeparture }
+```
+
+### 29.9 Acceptance criteria
+
+- [ ] Existing `?system=` rendering is byte-identical before/after merge (RAF unaffected).
+- [ ] Direct mode: `t = 2√(d/(2a))` matches formula within 1% for a known distance.
+- [ ] SOI-Safe: path crossing 5 AU between two inner bodies reports non-zero intersection against a Jupiter-analogue placed there.
+- [ ] Wait option: returns `waitDays > 0` and `clearAtDeparture: true` within 365-day horizon for the above case.
+- [ ] All three new files compile with zero TypeScript errors.
 
 ---
 

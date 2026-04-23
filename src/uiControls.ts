@@ -1,4 +1,5 @@
 import type { AppState } from './types';
+import { openTravelPanel, isTravelPanelOpen, closeTravelPanel } from './travelPanel';
 
 export function initUIControls(state: AppState, onResetView?: () => void): void {
   const btnPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
@@ -182,6 +183,31 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
   updatePlayPause();
   updateDateDisplay();
   updateSeed();
+
+  // FRD-060 §30: SOI-Safe Travel Calculator button
+  const controlsContainer = document.getElementById('controls');
+  if (controlsContainer) {
+    let travelBtn = document.getElementById('travel-calc-btn') as HTMLButtonElement | null;
+    if (!travelBtn) {
+      travelBtn = document.createElement('button');
+      travelBtn.id = 'travel-calc-btn';
+      travelBtn.className = 'btn small';
+      travelBtn.textContent = '⏱ Travel Calc';
+      travelBtn.style.marginTop = '8px';
+      travelBtn.style.width = '100%';
+      travelBtn.addEventListener('click', () => {
+        if (isTravelPanelOpen()) {
+          closeTravelPanel();
+        } else {
+          const starMass = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+          openTravelPanel(state.bodies, starMass);
+        }
+      });
+      // Append to the Map tab panel
+      const mapTab = document.getElementById('tab-map');
+      if (mapTab) mapTab.appendChild(travelBtn);
+    }
+  }
 }
 
 function generateSeed(length = 8): string {

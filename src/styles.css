@@ -549,3 +549,148 @@ select.btn {
 .body-tooltip .tt-value {
   font-variant-numeric: tabular-nums;
 }
+
+/* Travel Calculator Panel (FRD-060 §30) */
+.travel-calc-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  max-width: 90vw;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  z-index: 100;
+  display: none;
+  font-size: 13px;
+  color: #e5e7eb;
+}
+
+.tcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-weight: 600;
+  color: #ffe4b5;
+}
+
+.tcp-close {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.tcp-close:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.tcp-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tcp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tcp-row label:first-child {
+  width: 55px;
+  flex-shrink: 0;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.tcp-row select,
+.tcp-row input[type="number"] {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #e5e7eb;
+  font-size: 12px;
+  outline: none;
+}
+
+.tcp-row input[type="number"] {
+  width: 60px;
+  flex: none;
+}
+
+.tcp-routing label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tcp-results {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.tcp-result-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.tcp-result-row span:first-child {
+  color: #9ca3af;
+}
+
+.tcp-result-row span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.tcp-divider {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #60a5fa;
+  margin: 10px 0 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.tcp-soi-hit {
+  font-size: 11px;
+  padding: 3px 0;
+  color: #fca5a5;
+}
+
+.tcp-copy {
+  margin-top: 6px;
+  width: 100%;
+  padding: 5px;
+  background: rgba(96,165,250,0.15);
+  border: 1px solid rgba(96,165,250,0.3);
+  border-radius: 6px;
+  color: #93c5fd;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tcp-copy:hover {
+  background: rgba(96,165,250,0.25);
+}
