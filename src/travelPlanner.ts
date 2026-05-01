@@ -28,6 +28,7 @@ export function createTravelPlannerState(): TravelPlannerState {
     routingMode: 'soi-safe',
     accelG: 0.1,
     useGravityAssists: false,
+    useMultiLegChains: false,
     lastCalcResult: null,
   };
 }
@@ -187,6 +188,8 @@ export function initTravelPlanner(state: AppState): void {
   // Toggles
   const soiSafeCheck = document.getElementById('travel-soi-safe') as HTMLInputElement | null;
   const gravityAssistCheck = document.getElementById('travel-gravity-assists') as HTMLInputElement | null;
+  const multiLegCheck = document.getElementById('travel-multi-leg') as HTMLInputElement | null;
+  const multiLegRow = document.getElementById('travel-multi-leg-row');
 
   // Result fields
   const resCurrentDist = document.getElementById('res-current-dist');
@@ -313,7 +316,11 @@ export function initTravelPlanner(state: AppState): void {
 
     // Gravity assist indicator
     if (tp.useGravityAssists && resFailureReason) {
-      resFailureReason.textContent = '🔬 Gravity assist visualization active (physics placeholder — FRD-063)';
+      if (tp.useMultiLegChains) {
+        resFailureReason.textContent = '🔬 Multi-leg gravity assist chains active (up to 2 assists — FRD-063)';
+      } else {
+        resFailureReason.textContent = '🔬 Single gravity assist visualization active (FRD-063)';
+      }
       resFailureReason.style.display = 'block';
       resFailureReason.style.color = '#60a5fa';
     }
@@ -450,8 +457,26 @@ export function initTravelPlanner(state: AppState): void {
   if (gravityAssistCheck) {
     gravityAssistCheck.addEventListener('change', () => {
       tp.useGravityAssists = gravityAssistCheck.checked;
+      // Show/hide multi-leg option
+      if (multiLegRow) {
+        multiLegRow.style.display = gravityAssistCheck.checked ? '' : 'none';
+      }
+      if (!gravityAssistCheck.checked && multiLegCheck) {
+        multiLegCheck.checked = false;
+        tp.useMultiLegChains = false;
+      }
       if (tp.lastPlan) {
         // Re-trigger calculation to update results display
+        calculateTransfer();
+      }
+    });
+  }
+
+  // Toggle: Multi-leg gravity assist chains (FRD-063 §4)
+  if (multiLegCheck) {
+    multiLegCheck.addEventListener('change', () => {
+      tp.useMultiLegChains = multiLegCheck.checked;
+      if (tp.lastPlan) {
         calculateTransfer();
       }
     });

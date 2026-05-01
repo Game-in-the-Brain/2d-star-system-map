@@ -261,7 +261,8 @@ export function generatePlaceholderWaypoints(
   state: AppState,
   originId: string,
   destId: string,
-  frames: Map<string, { x: number; y: number }>
+  frames: Map<string, { x: number; y: number }>,
+  maxAssists: number = 2
 ): AssistWaypoint[] {
   const originFrame = frames.get(originId);
   const destFrame = frames.get(destId);
@@ -341,6 +342,6 @@ export function generatePlaceholderWaypoints(
     return da - db;
   });
 
-  // Limit to top 2 assists to avoid visual clutter
-  return waypoints.slice(0, 2);
+  // Limit to max assists to avoid visual clutter
+  return waypoints.slice(0, maxAssists);
 }

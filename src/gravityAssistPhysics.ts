@@ -153,7 +153,8 @@ export function findAssistOpportunities(
   destination: SceneBody,
   allBodies: SceneBody[],
   starMassSolar: number,
-  departureDayOffset: number = 0
+  departureDayOffset: number = 0,
+  useMultiLegChains: boolean = false
 ): GravityAssist[] {
   const assists: GravityAssist[] = [];
 
@@ -161,6 +162,7 @@ export function findAssistOpportunities(
   const directTransfer = patchedConicTransfer(origin, destination, starMassSolar, departureDayOffset);
   const directDeltaV = directTransfer?.totalDeltaVKms ?? Infinity;
 
+  // ─── Single-leg assists (origin → body → destination) ───
   for (const body of allBodies) {
     if (body.id === origin.id || body.id === destination.id) continue;
     if (body.type.startsWith('star')) continue;
@@ -178,18 +180,12 @@ export function findAssistOpportunities(
     if (!assistTransfer) continue;
 
     // Only include if the assist provides meaningful benefit
-    // (either reduces total delta-V or provides significant velocity change)
     const benefitRatio = directDeltaV > 0 ? (directDeltaV - assistTransfer.totalDeltaVKms) / directDeltaV : 0;
-
-    // Accept if:
-    // 1. Total delta-V is less than direct, OR
-    // 2. Assist provides > 2 km/s velocity change (useful even if total is higher due to extra leg)
     const isUseful = benefitRatio > 0.05 || assistTransfer.assistDeltaVKms > 2.0;
     if (!isUseful) continue;
 
-    // Determine if accelerating or decelerating
     const isAccelerating = assistTransfer.assistDeltaVKms > 0 &&
-      destination.distanceAU > origin.distanceAU; // Simplified: outbound = accelerate
+      destination.distanceAU > origin.distanceAU;
 
     assists.push({
       bodyId: body.id,
@@ -207,11 +203,89 @@ export function findAssistOpportunities(
     });
   }
 
+  // ─── Multi-leg chains (origin → assist1 → assist2 → destination) ───
+  if (useMultiLegChains && assists.length > 0) {
+    const chains = findTwoLegChains(
+      origin, destination, allBodies, starMassSolar, departureDayOffset, directDeltaV
+    );
+    // Mark chain assists with a note
+    for (const chainAssist of chains) {
+      chainAssist.bodyLabel += ' (chain)';
+      assists.push(chainAssist);
+    }
+  }
+
   // Sort by delta-V gain (descending)
   assists.sort((a, b) => b.deltaVKms - a.deltaVKms);
 
-  // Return top 3
-  return assists.slice(0, 3);
+  // Return top results
+  return assists.slice(0, useMultiLegChains ? 5 : 3);
+}
+
+/**
+ * Search for viable 2-leg gravity assist chains.
+ * Origin → assist1 → assist2 → destination
+ */
+function findTwoLegChains(
+  origin: SceneBody,
+  destination: SceneBody,
+  allBodies: SceneBody[],
+  starMassSolar: number,
+  departureDayOffset: number,
+  directDeltaV: number
+): GravityAssist[] {
+  const chainAssists: GravityAssist[] = [];
+  const candidates = allBodies.filter(b =>
+    b.id !== origin.id && b.id !== destination.id &&
+    !b.type.startsWith('star') && b.mass > 0
+  );
+
+  for (let i = 0; i < candidates.length; i++) {
+    const body1 = candidates[i];
+    if (body1.distanceAU <= Math.min(origin.distanceAU, destination.distanceAU) ||
+        body1.distanceAU >= Math.max(origin.distanceAU, destination.distanceAU)) continue;
+
+    const transfer1 = gravityAssistTransfer(origin, body1, destination, starMassSolar, departureDayOffset);
+    if (!transfer1) continue;
+
+    for (let j = 0; j < candidates.length; j++) {
+      if (i === j) continue;
+      const body2 = candidates[j];
+
+      const minDist = Math.min(body1.distanceAU, destination.distanceAU);
+      const maxDist = Math.max(body1.distanceAU, destination.distanceAU);
+      if (body2.distanceAU <= minDist || body2.distanceAU >= maxDist) continue;
+
+      const midTime = departureDayOffset + transfer1.totalTimeDays * 0.5;
+      const transfer2 = gravityAssistTransfer(body1, body2, destination, starMassSolar, midTime);
+      if (!transfer2) continue;
+
+      const transfer3 = patchedConicTransfer(body2, destination, starMassSolar, midTime + transfer2.totalTimeDays * 0.5);
+      if (!transfer3) continue;
+
+      const totalDeltaV = transfer1.totalDeltaVKms + transfer2.totalDeltaVKms + transfer3.totalDeltaVKms;
+      const totalTime = transfer1.totalTimeDays + transfer2.totalTimeDays + transfer3.timeOfFlightDays;
+
+      const benefitRatio = directDeltaV > 0 ? (directDeltaV - totalDeltaV) / directDeltaV : 0;
+      if (benefitRatio <= 0.1) continue;
+
+      chainAssists.push({
+        bodyId: `${body1.id}+${body2.id}`,
+        bodyLabel: `${body1.label} → ${body2.label}`,
+        flybyDayOffset: midTime,
+        flybyAltitudeKm: 500,
+        vInfinityKms: transfer1.assistDeltaVKms + transfer2.assistDeltaVKms,
+        turningAngleDeg: transfer1.flybyTurningAngleDeg + transfer2.flybyTurningAngleDeg,
+        deltaVKms: Math.abs(directDeltaV - totalDeltaV),
+        isAccelerating: destination.distanceAU > origin.distanceAU,
+        isValid: true,
+        warning: `2-leg chain, total ${totalTime.toFixed(0)}d`,
+      });
+    }
+  }
+
+  chainAssists.sort((a, b) => b.deltaVKms - a.deltaVKms);
+  return chainAssists.slice(0, 2);
 }
 
 /**

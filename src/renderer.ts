@@ -442,7 +442,8 @@ function drawTravelPlannerOverlays(
 
     if (tp.useGravityAssists) {
       // FRD-063: Draw multi-leg gravity-assist trajectory
-      const waypoints = generatePlaceholderWaypoints(state, tp.originId, tp.destinationId, frames);
+      const maxAssists = tp.useMultiLegChains ? 2 : 1;
+      const waypoints = generatePlaceholderWaypoints(state, tp.originId, tp.destinationId, frames, maxAssists);
       drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
     } else {
       // Standard direct chord

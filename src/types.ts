@@ -210,6 +210,7 @@ export interface TravelPlannerState {
   routingMode: RoutingMode;
   accelG: number;
   useGravityAssists: boolean;
+  useMultiLegChains: boolean;  // FRD-063 §4: opt-in multi-leg gravity assist chains
   lastCalcResult: TravelResult | null;
 }
 
