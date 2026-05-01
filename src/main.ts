@@ -7,6 +7,7 @@ import { buildSceneGraph } from './dataAdapter';
 import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
 import { generateRandomSystem } from './generator';
+import { solPayload } from './solSystem';
 import { APP_FULL_VERSION } from './version';
 import { savePage, saveInteractivePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
 import { initEditor, setEditorSystem } from './editor';
@@ -123,6 +124,7 @@ function initPasteControls(state: AppState): void {
   const btnLoadSystem = document.getElementById('btn-load-system') as HTMLButtonElement | null;
   const btnDownloadSystem = document.getElementById('btn-download-system') as HTMLButtonElement | null;
   const btnGenerateSystem = document.getElementById('btn-generate-system') as HTMLButtonElement | null;
+  const btnLoadSol = document.getElementById('btn-load-sol') as HTMLButtonElement | null;
   const btnSavePage = document.getElementById('btn-save-page') as HTMLButtonElement | null;
   const btnExportInteractive = document.getElementById('btn-export-interactive') as HTMLButtonElement | null;
   const btnExportCsv = document.getElementById('btn-export-csv') as HTMLButtonElement | null;
@@ -132,6 +134,12 @@ function initPasteControls(state: AppState): void {
     btnGenerateSystem.addEventListener('click', () => {
       const payload = generateRandomSystem();
       loadSystemIntoState(state, payload);
+    });
+  }
+
+  if (btnLoadSol) {
+    btnLoadSol.addEventListener('click', () => {
+      loadSystemIntoState(state, solPayload);
     });
   }
 
@@ -310,6 +318,18 @@ function main() {
     } catch (err) {
       console.error('[main] buildSceneGraph failed for URL payload:', err);
       alert('Failed to build scene graph from URL. Check console for details.');
+    }
+  } else {
+    // Load Sol system by default for demonstration
+    currentPayload = solPayload;
+    state.starfieldSeed = solPayload.starfieldSeed;
+    state.epochDate = new Date(
+      Date.UTC(solPayload.epoch.year, solPayload.epoch.month - 1, solPayload.epoch.day)
+    );
+    try {
+      state.bodies = buildSceneGraph(solPayload.starSystem);
+    } catch (err) {
+      console.error('[main] buildSceneGraph failed for Sol:', err);
     }
   }
 
