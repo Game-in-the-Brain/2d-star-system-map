@@ -1,6 +1,7 @@
 import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelineState, Point, TravelBody } from './types';
 import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './travelPhysics';
 import { toTravelBody, calculateTravel, brachistochroneTimeDays } from './travelCalc';
+import { patchedConicTransfer } from './patchedConic';
 import { logScaleDistance } from './camera';
 
 const HIT_RADIUS_PX = 18;
@@ -29,6 +30,7 @@ export function createTravelPlannerState(): TravelPlannerState {
     accelG: 0.1,
     useGravityAssists: false,
     useMultiLegChains: false,
+    deadlineDays: null,
     lastCalcResult: null,
   };
 }
@@ -177,6 +179,7 @@ export function initTravelPlanner(state: AppState): void {
   const travelDestination = document.getElementById('travel-destination');
   const deltaVInput = document.getElementById('travel-delta-v') as HTMLInputElement | null;
   const accelInput = document.getElementById('travel-accel') as HTMLInputElement | null;
+  const deadlineInput = document.getElementById('travel-deadline') as HTMLInputElement | null;
   const useSimDateCheck = document.getElementById('travel-use-sim-date') as HTMLInputElement | null;
   const departureDateInput = document.getElementById('travel-departure-date') as HTMLInputElement | null;
   const departureWrapper = document.getElementById('travel-departure-wrapper');
@@ -209,6 +212,13 @@ export function initTravelPlanner(state: AppState): void {
   const resSoiDetours = document.getElementById('res-soi-detours');
   const travelWaitSection = document.getElementById('travel-wait-section');
   const resWaitTotal = document.getElementById('res-wait-total');
+
+  // FRD-064: Deadline
+  const travelDeadlineSection = document.getElementById('travel-deadline-section');
+  const resHohmannDv = document.getElementById('res-hohmann-dv');
+  const resHohmannTime = document.getElementById('res-hohmann-time');
+  const resDeadlineDv = document.getElementById('res-deadline-dv');
+  const resDeadlineStatus = document.getElementById('res-deadline-status');
 
   function updatePanel() {
     const hasOrigin = tp.originId !== null;
@@ -303,6 +313,37 @@ export function initTravelPlanner(state: AppState): void {
     updateDistanceContext();
   }
 
+  function displayDeadlineResults(
+    hohmann: ReturnType<typeof patchedConicTransfer>,
+    deadline: ReturnType<typeof patchedConicTransfer>,
+    budget: number
+  ) {
+    if (!travelDeadlineSection) return;
+    travelDeadlineSection.style.display = 'block';
+
+    if (resHohmannDv) {
+      resHohmannDv.textContent = hohmann ? `${hohmann.totalDeltaVKms.toFixed(2)} km/s` : '—';
+    }
+    if (resHohmannTime) {
+      resHohmannTime.textContent = hohmann ? `${hohmann.timeOfFlightDays.toFixed(0)}d` : '—';
+    }
+    if (resDeadlineDv) {
+      resDeadlineDv.textContent = deadline ? `${deadline.totalDeltaVKms.toFixed(2)} km/s` : 'Impossible';
+    }
+    if (resDeadlineStatus) {
+      if (!deadline) {
+        resDeadlineStatus.textContent = '❌ No solution for this deadline';
+        resDeadlineStatus.className = 'travel-result-value impossible';
+      } else if (deadline.totalDeltaVKms <= budget) {
+        resDeadlineStatus.textContent = `✅ Within budget (+${(deadline.totalDeltaVKms - (hohmann?.totalDeltaVKms ?? 0)).toFixed(2)} km/s vs Hohmann)`;
+        resDeadlineStatus.className = 'travel-result-value possible';
+      } else {
+        resDeadlineStatus.textContent = `⚠️ Over budget by ${(deadline.totalDeltaVKms - budget).toFixed(2)} km/s`;
+        resDeadlineStatus.className = 'travel-result-value impossible';
+      }
+    }
+  }
+
   function displaySoiResults(calcResult: import('./types').TravelResult) {
     if (!travelResults) return;
     travelResults.style.display = 'flex';
@@ -382,6 +423,15 @@ export function initTravelPlanner(state: AppState): void {
     tp.lastCalcResult = calcResult;
     displaySoiResults(calcResult);
 
+    // 3. FRD-064: Deadline / fast transfer analysis
+    if (tp.deadlineDays && tp.deadlineDays > 0) {
+      const hohmannTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset);
+      const deadlineTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset, tp.deadlineDays);
+      displayDeadlineResults(hohmannTransfer, deadlineTransfer, budget);
+    } else {
+      if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
+    }
+
     if (plan.isPossible) {
       tp.timeline.travelDayOffset = 0;
       if (tp.timeline.pinnedDepartureDayOffset === null) {
@@ -402,6 +452,7 @@ export function initTravelPlanner(state: AppState): void {
     if (travelResults) travelResults.style.display = 'none';
     if (travelSoiSection) travelSoiSection.style.display = 'none';
     if (travelWaitSection) travelWaitSection.style.display = 'none';
+    if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
     hideTimeline();
     updatePanel();
   }
@@ -434,6 +485,14 @@ export function initTravelPlanner(state: AppState): void {
         const msDiff = departureDateInput.valueAsDate.getTime() - state.epochDate.getTime();
         tp.customDepartureDayOffset = Math.round(msDiff / 86400000);
       }
+    });
+  }
+
+  if (deadlineInput) {
+    deadlineInput.addEventListener('change', () => {
+      const val = parseFloat(deadlineInput.value);
+      tp.deadlineDays = !isNaN(val) && val > 0 ? val : null;
+      if (tp.lastPlan) calculateTransfer();
     });
   }
 

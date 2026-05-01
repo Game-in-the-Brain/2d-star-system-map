@@ -211,6 +211,7 @@ export interface TravelPlannerState {
   accelG: number;
   useGravityAssists: boolean;
   useMultiLegChains: boolean;  // FRD-063 §4: opt-in multi-leg gravity assist chains
+  deadlineDays: number | null; // FRD-064: max transit time deadline
   lastCalcResult: TravelResult | null;
 }
 

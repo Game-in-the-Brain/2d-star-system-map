@@ -152,6 +152,9 @@
 
               <label for="travel-accel">Acceleration (G)</label>
               <input id="travel-accel" type="number" step="0.01" min="0.01" value="0.1" />
+
+              <label for="travel-deadline">Max Transit (days)</label>
+              <input id="travel-deadline" type="number" step="1" min="1" placeholder="∞" />
             </div>
 
             <!-- Toggles -->
@@ -223,6 +226,27 @@
               <div class="travel-result-row">
                 <span class="travel-result-label">Next Window:</span>
                 <span id="res-next-window" class="travel-result-value">—</span>
+              </div>
+
+              <!-- Deadline / Fast Transfer (FRD-064) -->
+              <div id="travel-deadline-section" style="display:none;">
+                <div class="travel-result-row divider"></div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Hohmann ΔV:</span>
+                  <span id="res-hohmann-dv" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Hohmann Time:</span>
+                  <span id="res-hohmann-time" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Deadline ΔV:</span>
+                  <span id="res-deadline-dv" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Deadline Status:</span>
+                  <span id="res-deadline-status" class="travel-result-value">—</span>
+                </div>
               </div>
 
               <!-- SOI info (populated when SOI-safe is on) -->
