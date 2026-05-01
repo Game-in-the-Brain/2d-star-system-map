@@ -11,6 +11,7 @@ import { APP_FULL_VERSION } from './version';
 import { savePage, saveInteractivePage, loadSavedPage, exportToCsv, exportToDocx } from './savePage';
 import { initEditor, setEditorSystem } from './editor';
 import { initTravelPlanner, createTravelPlannerState } from './travelPlanner';
+import { runGravityAssistTests, printTestResults } from './tests/gravityAssistTests';
 
 let currentPayload: MapPayload | null = null;
 
@@ -382,6 +383,10 @@ function main() {
   const versionWatermark = document.getElementById('version-watermark');
   if (versionDisplay) versionDisplay.textContent = APP_FULL_VERSION;
   if (versionWatermark) versionWatermark.textContent = APP_FULL_VERSION;
+
+  // Register FRD-063 test runner on window for browser console access
+  (window as unknown as Record<string, unknown>).runGravityAssistTests = runGravityAssistTests;
+  (window as unknown as Record<string, unknown>).printTestResults = printTestResults;
 }
 
 main();

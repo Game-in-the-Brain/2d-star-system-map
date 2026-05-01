@@ -259,3 +259,35 @@ export interface TravelResult {
   detourAddedAU: number;
   waitAlternative: WaitResult | null;
 }
+
+// FRD-063: Gravity Assists
+export interface GravityAssist {
+  bodyId: string;
+  bodyLabel: string;
+  flybyDayOffset: number;
+  flybyAltitudeKm: number;
+  vInfinityKms: number;
+  turningAngleDeg: number;
+  deltaVKms: number;
+  isAccelerating: boolean;
+  isValid: boolean;
+  warning?: string;
+}
+
+export interface TransferLeg {
+  fromBodyId: string;
+  toBodyId: string;
+  departureDayOffset: number;
+  arrivalDayOffset: number;
+  deltaVKms: number;
+  transferType: 'hohmann' | 'lambert' | 'coast';
+  trajectory: { x: number; y: number; day: number }[];
+}
+
+export interface MultiLegPlan {
+  legs: TransferLeg[];
+  assists: GravityAssist[];
+  totalDeltaVKms: number;
+  totalTimeDays: number;
+  directComparison: { deltaVKms: number; timeDays: number };
+}
