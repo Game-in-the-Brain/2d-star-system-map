@@ -436,8 +436,126 @@ select.btn {
   color: #4ade80;
 }
 
+/* Travel route tags */
+.travel-route-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.travel-route-arrow {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Travel toggles */
+.travel-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #e5e7eb;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.toggle-hint {
+  color: #6b7280;
+  font-size: 10px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Travel params */
+.travel-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.travel-params label {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.travel-params input[type="number"] {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e5e7eb;
+  padding: 5px 8px;
+  font-size: 12px;
+  width: 100%;
+}
+
+/* SOI list in results */
+.travel-soi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.travel-soi-item {
+  font-size: 11px;
+  color: #fca5a5;
+  padding: 2px 0;
+}
+
+/* Canvas context menu */
+.canvas-context-menu {
+  position: absolute;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 4px;
+  min-width: 170px;
+  display: none;
+}
+
+.ctx-item {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #e5e7eb;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.ctx-item:active,
+.ctx-item:hover {
+  background: rgba(96, 165, 250, 0.2);
+}
+
+.ctx-cancel {
+  color: #9ca3af;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
 /* Responsive tweaks */
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   .control-panel {
     top: 8px;
     left: 8px;
@@ -446,12 +564,44 @@ select.btn {
     padding: 10px;
   }
   .btn {
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: 8px 10px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+  .btn.small {
+    padding: 7px 8px;
+    min-height: 36px;
   }
   .panel-fab {
     top: 8px;
     left: 8px;
+    width: 44px;
+    height: 44px;
+  }
+  .travel-body-tag {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .travel-params input[type="number"] {
+    padding: 8px 10px;
+    font-size: 14px; /* Prevent iOS zoom on focus */
+  }
+  .toggle-row {
+    font-size: 13px;
+  }
+  .toggle-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (max-width: 360px) {
+  .control-panel {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    max-width: none;
+    padding: 10px;
   }
 }
 

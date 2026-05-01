@@ -205,6 +205,12 @@ export interface TravelPlannerState {
   lastPlan: TravelPlan | null;
   isActive: boolean;
   timeline: TravelTimelineState;
+
+  // Unified travel calculator state (merged from floating panel)
+  routingMode: RoutingMode;
+  accelG: number;
+  useGravityAssists: boolean;
+  lastCalcResult: TravelResult | null;
 }
 
 // FRD-060 §30: SOI-Safe Routing

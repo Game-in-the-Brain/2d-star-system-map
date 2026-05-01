@@ -1,5 +1,6 @@
-import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelineState, Point } from './types';
+import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelineState, Point, TravelBody } from './types';
 import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './travelPhysics';
+import { toTravelBody, calculateTravel, brachistochroneTimeDays } from './travelCalc';
 import { logScaleDistance } from './camera';
 
 const HIT_RADIUS_PX = 18;
@@ -24,6 +25,10 @@ export function createTravelPlannerState(): TravelPlannerState {
     lastPlan: null,
     isActive: false,
     timeline: createTimelineState(),
+    routingMode: 'soi-safe',
+    accelG: 0.1,
+    useGravityAssists: false,
+    lastCalcResult: null,
   };
 }
 
@@ -170,22 +175,18 @@ export function initTravelPlanner(state: AppState): void {
   const travelOrigin = document.getElementById('travel-origin');
   const travelDestination = document.getElementById('travel-destination');
   const deltaVInput = document.getElementById('travel-delta-v') as HTMLInputElement | null;
+  const accelInput = document.getElementById('travel-accel') as HTMLInputElement | null;
   const useSimDateCheck = document.getElementById('travel-use-sim-date') as HTMLInputElement | null;
   const departureDateInput = document.getElementById('travel-departure-date') as HTMLInputElement | null;
+  const departureWrapper = document.getElementById('travel-departure-wrapper');
   const btnCalculate = document.getElementById('btn-calculate-transfer') as HTMLButtonElement | null;
   const btnClear = document.getElementById('btn-clear-travel') as HTMLButtonElement | null;
   const travelResults = document.getElementById('travel-results');
+  const distanceContext = document.getElementById('travel-distance-context');
 
-  // Simulation controls
-  const btnTravelPlay = document.getElementById('btn-travel-play') as HTMLButtonElement | null;
-  const btnTravelPause = document.getElementById('btn-travel-pause') as HTMLButtonElement | null;
-  const btnTravelReverse = document.getElementById('btn-travel-reverse') as HTMLButtonElement | null;
-  const travelSpeedSelect = document.getElementById('travel-speed-select') as HTMLSelectElement | null;
-  const btnTravelStepMinus7 = document.getElementById('btn-travel-step-minus-7') as HTMLButtonElement | null;
-  const btnTravelStepMinus1 = document.getElementById('btn-travel-step-minus-1') as HTMLButtonElement | null;
-  const btnTravelStepPlus1 = document.getElementById('btn-travel-step-plus-1') as HTMLButtonElement | null;
-  const btnTravelStepPlus7 = document.getElementById('btn-travel-step-plus-7') as HTMLButtonElement | null;
-  const btnTravelReset = document.getElementById('btn-travel-reset') as HTMLButtonElement | null;
+  // Toggles
+  const soiSafeCheck = document.getElementById('travel-soi-safe') as HTMLInputElement | null;
+  const gravityAssistCheck = document.getElementById('travel-gravity-assists') as HTMLInputElement | null;
 
   // Result fields
   const resCurrentDist = document.getElementById('res-current-dist');
@@ -195,11 +196,16 @@ export function initTravelPlanner(state: AppState): void {
   const resCaptureDest = document.getElementById('res-capture-dest');
   const resHrsCost = document.getElementById('res-hrs-cost');
   const resExcessDv = document.getElementById('res-excess-dv');
-  const resOptimistic = document.getElementById('res-optimistic');
-  const resLikely = document.getElementById('res-likely');
-  const resPessimistic = document.getElementById('res-pessimistic');
+  const resFlightTime = document.getElementById('res-flight-time');
+  const resDistance = document.getElementById('res-distance');
   const resNextWindow = document.getElementById('res-next-window');
   const resFailureReason = document.getElementById('res-failure-reason');
+  const resOptimistic = document.getElementById('res-optimistic');
+  const travelSoiSection = document.getElementById('travel-soi-section');
+  const travelSoiList = document.getElementById('travel-soi-list');
+  const resSoiDetours = document.getElementById('res-soi-detours');
+  const travelWaitSection = document.getElementById('travel-wait-section');
+  const resWaitTotal = document.getElementById('res-wait-total');
 
   function updatePanel() {
     const hasOrigin = tp.originId !== null;
@@ -219,6 +225,10 @@ export function initTravelPlanner(state: AppState): void {
 
     if (btnCalculate) {
       btnCalculate.disabled = !(hasOrigin && hasDest && tp.originId !== tp.destinationId);
+    }
+
+    if (distanceContext) {
+      distanceContext.style.display = (hasOrigin && hasDest) ? 'flex' : 'none';
     }
   }
 
@@ -269,17 +279,6 @@ export function initTravelPlanner(state: AppState): void {
       resExcessDv.className = 'travel-result-value ' + (plan.isPossible ? 'possible' : 'impossible');
     }
 
-    if (resOptimistic) {
-      resOptimistic.textContent = plan.isPossible ? formatDays(plan.optimisticArrivalDays) : '—';
-    }
-    if (resLikely) {
-      const lo = plan.optimisticArrivalDays;
-      const hi = plan.pessimisticArrivalDays;
-      resLikely.textContent = plan.isPossible ? `${formatDays(lo)}–${formatDays(hi)}` : '—';
-    }
-    if (resPessimistic) {
-      resPessimistic.textContent = plan.isPossible ? formatDays(plan.pessimisticArrivalDays) : '—';
-    }
     if (resNextWindow) {
       const windowDate = new Date(state.epochDate.getTime() + plan.nextWindowDayOffset * 86400000);
       resNextWindow.textContent = windowDate.toISOString().split('T')[0];
@@ -293,23 +292,81 @@ export function initTravelPlanner(state: AppState): void {
       }
     }
 
+    // Also update legacy hidden fields
+    if (resOptimistic) {
+      resOptimistic.textContent = plan.isPossible ? formatDays(plan.optimisticArrivalDays) : '—';
+    }
+
     updateDistanceContext();
+  }
+
+  function displaySoiResults(calcResult: import('./types').TravelResult) {
+    if (!travelResults) return;
+    travelResults.style.display = 'flex';
+
+    if (resFlightTime) {
+      resFlightTime.textContent = `${calcResult.flightTimeDays.toFixed(1)}d`;
+    }
+    if (resDistance) {
+      resDistance.textContent = `${calcResult.pathDistanceAU.toFixed(2)} AU`;
+    }
+
+    // SOI intersections
+    if (travelSoiSection && travelSoiList && resSoiDetours) {
+      if (calcResult.soiIntersections.length > 0) {
+        travelSoiSection.style.display = 'block';
+        resSoiDetours.textContent = `${calcResult.detourAddedAU.toFixed(3)} AU`;
+        travelSoiList.innerHTML = calcResult.soiIntersections.map(hit =>
+          `<div class="travel-soi-item">⚠ ${hit.bodyLabel} +${hit.detourAddedAU.toFixed(3)} AU</div>`
+        ).join('');
+      } else {
+        travelSoiSection.style.display = 'none';
+      }
+    }
+
+    // Wait alternative
+    if (travelWaitSection && resWaitTotal) {
+      if (calcResult.waitAlternative) {
+        travelWaitSection.style.display = 'block';
+        resWaitTotal.textContent = `${calcResult.waitAlternative.totalTimeDays.toFixed(1)}d (wait ${calcResult.waitAlternative.waitDays.toFixed(1)}d)`;
+      } else {
+        travelWaitSection.style.display = 'none';
+      }
+    }
   }
 
   function calculateTransfer() {
     if (!tp.originId || !tp.destinationId) return;
-    const origin = state.bodies.find((b) => b.id === tp.originId);
-    const destination = state.bodies.find((b) => b.id === tp.destinationId);
-    if (!origin || !destination) return;
+    const originBody = state.bodies.find((b) => b.id === tp.originId);
+    const destBody = state.bodies.find((b) => b.id === tp.destinationId);
+    if (!originBody || !destBody) return;
 
     const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+    const starMassEM = starMassSolar * 332946;
     const budget = parseFloat(deltaVInput?.value ?? '20');
+    const accelG = parseFloat(accelInput?.value ?? '0.1');
     const departureOffset = tp.timeline.pinnedDepartureDayOffset
       ?? (tp.useSimDate ? state.simDayOffset : tp.customDepartureDayOffset);
 
-    const plan = buildTravelPlan(origin, destination, budget, departureOffset, state.bodies, starMassSolar);
+    // 1. Delta-V budget plan (escape + capture + HRS)
+    const plan = buildTravelPlan(originBody, destBody, budget, departureOffset, state.bodies, starMassSolar);
     tp.lastPlan = plan;
     displayResults(plan);
+
+    // 2. SOI-safe / brachistochrone calculation (from travelCalc.ts)
+    const allTravelBodies = state.bodies
+      .filter(b => !b.type.startsWith('star'))
+      .map(b => toTravelBody(b, starMassSolar));
+    const origin = toTravelBody(originBody, starMassSolar);
+    const destination = toTravelBody(destBody, starMassSolar);
+
+    const calcResult = calculateTravel(
+      { origin, destination, accelG, routingMode: tp.routingMode, departureOffsetDays: departureOffset },
+      allTravelBodies,
+      starMassEM
+    );
+    tp.lastCalcResult = calcResult;
+    displaySoiResults(calcResult);
 
     if (plan.isPossible) {
       tp.timeline.travelDayOffset = 0;
@@ -326,8 +383,11 @@ export function initTravelPlanner(state: AppState): void {
     tp.originId = null;
     tp.destinationId = null;
     tp.lastPlan = null;
+    tp.lastCalcResult = null;
     tp.timeline = createTimelineState();
     if (travelResults) travelResults.style.display = 'none';
+    if (travelSoiSection) travelSoiSection.style.display = 'none';
+    if (travelWaitSection) travelWaitSection.style.display = 'none';
     hideTimeline();
     updatePanel();
   }
@@ -369,6 +429,41 @@ export function initTravelPlanner(state: AppState): void {
 
   if (btnClear) {
     btnClear.addEventListener('click', clearSelection);
+  }
+
+  // Toggle: SOI-safe routing
+  if (soiSafeCheck) {
+    soiSafeCheck.addEventListener('change', () => {
+      tp.routingMode = soiSafeCheck.checked ? 'soi-safe' : 'direct';
+      if (tp.lastPlan) calculateTransfer();
+    });
+  }
+
+  // Toggle: Gravity assists (placeholder for FRD-063)
+  if (gravityAssistCheck) {
+    gravityAssistCheck.addEventListener('change', () => {
+      tp.useGravityAssists = gravityAssistCheck.checked;
+      if (tp.lastPlan) {
+        if (tp.useGravityAssists) {
+          // FRD-063 placeholder
+          alert('Gravity Assists will be available in FRD-063. Toggle off to use standard routing.');
+          gravityAssistCheck.checked = false;
+          tp.useGravityAssists = false;
+        } else {
+          calculateTransfer();
+        }
+      }
+    });
+  }
+
+  // Toggle: Use sim date
+  if (useSimDateCheck) {
+    useSimDateCheck.addEventListener('change', () => {
+      tp.useSimDate = useSimDateCheck.checked;
+      if (departureWrapper) {
+        departureWrapper.style.display = tp.useSimDate ? 'none' : 'block';
+      }
+    });
   }
 
   // --- Travel Timeline (FRD-049) ---
@@ -479,72 +574,6 @@ export function initTravelPlanner(state: AppState): void {
     });
   }
 
-  // Simulation controls (mirror Map tab behaviour)
-  function updatePlayPause() {
-    if (btnTravelPlay && btnTravelPause) {
-      btnTravelPlay.style.display = state.isPlaying ? 'none' : 'inline-block';
-      btnTravelPause.style.display = state.isPlaying ? 'inline-block' : 'none';
-    }
-  }
-
-  if (btnTravelPlay) {
-    btnTravelPlay.addEventListener('click', () => {
-      state.isPlaying = true;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelPause) {
-    btnTravelPause.addEventListener('click', () => {
-      state.isPlaying = false;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelReverse) {
-    btnTravelReverse.addEventListener('click', () => {
-      state.isReversed = !state.isReversed;
-      btnTravelReverse.classList.toggle('active', state.isReversed);
-    });
-  }
-  if (travelSpeedSelect) {
-    travelSpeedSelect.addEventListener('change', () => {
-      state.speed = parseFloat(travelSpeedSelect.value) || 1;
-    });
-  }
-  if (btnTravelStepMinus7) {
-    btnTravelStepMinus7.addEventListener('click', () => {
-      state.simDayOffset -= 7;
-      state.isPlaying = false;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelStepMinus1) {
-    btnTravelStepMinus1.addEventListener('click', () => {
-      state.simDayOffset -= 1;
-      state.isPlaying = false;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelStepPlus1) {
-    btnTravelStepPlus1.addEventListener('click', () => {
-      state.simDayOffset += 1;
-      state.isPlaying = false;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelStepPlus7) {
-    btnTravelStepPlus7.addEventListener('click', () => {
-      state.simDayOffset += 7;
-      state.isPlaying = false;
-      updatePlayPause();
-    });
-  }
-  if (btnTravelReset) {
-    btnTravelReset.addEventListener('click', () => {
-      state.simDayOffset = 0;
-    });
-  }
-
-  updatePlayPause();
   updatePanel();
 
   // Keep distance context updated while simulation runs

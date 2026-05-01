@@ -1,5 +1,5 @@
 import type { AppState } from './types';
-import { openTravelPanel, isTravelPanelOpen, closeTravelPanel } from './travelPanel';
+// Travel panel is now unified in the sidebar Travel tab — no floating panel
 
 export function initUIControls(state: AppState, onResetView?: () => void): void {
   const btnPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
@@ -184,7 +184,7 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
   updateDateDisplay();
   updateSeed();
 
-  // FRD-060 §30: SOI-Safe Travel Calculator button
+  // FRD-060 §30: Travel Calculator button — switches to Travel tab (unified UI)
   const controlsContainer = document.getElementById('controls');
   if (controlsContainer) {
     let travelBtn = document.getElementById('travel-calc-btn') as HTMLButtonElement | null;
@@ -192,16 +192,12 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
       travelBtn = document.createElement('button');
       travelBtn.id = 'travel-calc-btn';
       travelBtn.className = 'btn small';
-      travelBtn.textContent = '⏱ Travel Calc';
+      travelBtn.textContent = '⏱ Travel Planner';
       travelBtn.style.marginTop = '8px';
       travelBtn.style.width = '100%';
       travelBtn.addEventListener('click', () => {
-        if (isTravelPanelOpen()) {
-          closeTravelPanel();
-        } else {
-          const starMass = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
-          openTravelPanel(state.bodies, starMass);
-        }
+        const travelTab = document.querySelector('.tab-btn[data-tab="travel"]') as HTMLElement | null;
+        if (travelTab) travelTab.click();
       });
       // Append to the Map tab panel
       const mapTab = document.getElementById('tab-map');

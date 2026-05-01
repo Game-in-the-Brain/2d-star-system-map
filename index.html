@@ -132,52 +132,52 @@
 
         <!-- Travel Planner Tab -->
         <div id="tab-travel" class="tab-panel">
-          <div id="travel-empty" class="travel-empty">Select an origin and destination on the map to plan a journey.</div>
+          <div id="travel-empty" class="travel-empty">Double-tap a body to set origin, then destination.</div>
           <div id="travel-form" class="travel-form" style="display:none;">
+
+            <!-- Route selection -->
             <div class="travel-section">
-              <label>Origin</label>
-              <div id="travel-origin" class="travel-body-tag">—</div>
-            </div>
-            <div class="travel-section">
-              <label>Destination</label>
-              <div id="travel-destination" class="travel-body-tag">—</div>
+              <label>Route</label>
+              <div class="travel-route-tags">
+                <div id="travel-origin" class="travel-body-tag">—</div>
+                <span class="travel-route-arrow">→</span>
+                <div id="travel-destination" class="travel-body-tag">—</div>
+              </div>
             </div>
 
-            <!-- Sim playback controls (mirrored from Map tab) -->
-            <div class="control-row" style="justify-content: center;">
-              <button id="btn-travel-play" class="btn" aria-label="Play" title="Play">▶</button>
-              <button id="btn-travel-pause" class="btn" aria-label="Pause" title="Pause" style="display:none">⏸</button>
-              <button id="btn-travel-reverse" class="btn" aria-label="Reverse" title="Reverse">⏮</button>
-              <select id="travel-speed-select" class="btn" title="Simulation speed">
-                <option value="0.25">0.25×</option>
-                <option value="0.5">0.5×</option>
-                <option value="1" selected>1×</option>
-                <option value="2">2×</option>
-                <option value="5">5×</option>
-                <option value="10">10×</option>
-                <option value="30">30×</option>
-                <option value="365">365×</option>
-              </select>
-            </div>
-            <div class="control-row">
-              <button id="btn-travel-step-minus-7" class="btn small">-7d</button>
-              <button id="btn-travel-step-minus-1" class="btn small">-1d</button>
-              <button id="btn-travel-step-plus-1" class="btn small">+1d</button>
-              <button id="btn-travel-step-plus-7" class="btn small">+7d</button>
-              <button id="btn-travel-reset" class="btn small">Reset</button>
-            </div>
-
-            <div class="travel-section">
-              <label for="travel-delta-v">Spacecraft Delta-V (km/s)</label>
+            <!-- Parameters -->
+            <div class="travel-section travel-params">
+              <label for="travel-delta-v">ΔV Budget (km/s)</label>
               <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
+
+              <label for="travel-accel">Acceleration (G)</label>
+              <input id="travel-accel" type="number" step="0.01" min="0.01" value="0.1" />
             </div>
-            <div class="travel-section">
-              <label>
-                <input id="travel-use-sim-date" type="checkbox" checked />
-                Use current simulation date
+
+            <!-- Toggles -->
+            <div class="travel-toggles">
+              <label class="toggle-row">
+                <input id="travel-soi-safe" type="checkbox" checked />
+                <span>SOI-Safe Routing</span>
               </label>
-              <input id="travel-departure-date" type="date" style="display:none;" />
+              <label class="toggle-row">
+                <input id="travel-gravity-assists" type="checkbox" />
+                <span>Use Gravity Assists</span>
+                <span class="toggle-hint">FRD-063</span>
+              </label>
+              <label class="toggle-row">
+                <input id="travel-use-sim-date" type="checkbox" checked />
+                <span>Use current simulation date</span>
+              </label>
             </div>
+
+            <!-- Departure date (shown when sim date unchecked) -->
+            <div class="travel-section" id="travel-departure-wrapper" style="display:none;">
+              <label for="travel-departure-date">Departure Date</label>
+              <input id="travel-departure-date" type="date" />
+            </div>
+
+            <!-- Action buttons -->
             <div class="control-row">
               <button id="btn-calculate-transfer" class="btn" style="width: 100%;">🚀 Calculate Transfer</button>
             </div>
@@ -185,23 +185,9 @@
               <button id="btn-clear-travel" class="btn small" style="width: 100%;">Clear Selection</button>
             </div>
 
-            <!-- Distance context -->
-            <div class="travel-results" style="display:flex;">
-              <div class="travel-result-row">
-                <span class="travel-result-label">Current Dist:</span>
-                <span id="res-current-dist" class="travel-result-value">—</span>
-              </div>
-              <div class="travel-result-row">
-                <span class="travel-result-label">Closest:</span>
-                <span id="res-min-dist" class="travel-result-value">—</span>
-              </div>
-              <div class="travel-result-row">
-                <span class="travel-result-label">Farthest:</span>
-                <span id="res-max-dist" class="travel-result-value">—</span>
-              </div>
-            </div>
-
+            <!-- Unified Results: Delta-V breakdown + SOI-safe info -->
             <div id="travel-results" class="travel-results" style="display:none;">
+              <!-- Delta-V budget -->
               <div class="travel-result-row">
                 <span class="travel-result-label">Escape Origin:</span>
                 <span id="res-escape-origin" class="travel-result-value">—</span>
@@ -218,25 +204,63 @@
                 <span class="travel-result-label">Excess ΔV:</span>
                 <span id="res-excess-dv" class="travel-result-value">—</span>
               </div>
+
+              <!-- Time & distance -->
               <div class="travel-result-row divider"></div>
               <div class="travel-result-row">
-                <span class="travel-result-label">Optimistic:</span>
-                <span id="res-optimistic" class="travel-result-value">—</span>
+                <span class="travel-result-label">Flight Time:</span>
+                <span id="res-flight-time" class="travel-result-value">—</span>
               </div>
               <div class="travel-result-row">
-                <span class="travel-result-label">Likely:</span>
-                <span id="res-likely" class="travel-result-value">—</span>
+                <span class="travel-result-label">Distance:</span>
+                <span id="res-distance" class="travel-result-value">—</span>
               </div>
-              <div class="travel-result-row">
-                <span class="travel-result-label">Pessimistic:</span>
-                <span id="res-pessimistic" class="travel-result-value">—</span>
-              </div>
-              <div class="travel-result-row divider"></div>
               <div class="travel-result-row">
                 <span class="travel-result-label">Next Window:</span>
                 <span id="res-next-window" class="travel-result-value">—</span>
               </div>
+
+              <!-- SOI info (populated when SOI-safe is on) -->
+              <div id="travel-soi-section" style="display:none;">
+                <div class="travel-result-row divider"></div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">SOI Detours:</span>
+                  <span id="res-soi-detours" class="travel-result-value">—</span>
+                </div>
+                <div id="travel-soi-list" class="travel-soi-list"></div>
+              </div>
+
+              <!-- Wait alternative -->
+              <div id="travel-wait-section" style="display:none;">
+                <div class="travel-result-row divider"></div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Wait Alternative:</span>
+                  <span id="res-wait-total" class="travel-result-value">—</span>
+                </div>
+              </div>
+
+              <!-- Legacy optimistic/likely/pessimistic (hidden, kept for compatibility) -->
+              <div id="res-optimistic" style="display:none;"></div>
+              <div id="res-likely" style="display:none;"></div>
+              <div id="res-pessimistic" style="display:none;"></div>
+
               <div id="res-failure-reason" class="travel-result-row" style="display:none; margin-top:4px; color:#ef4444; font-size:11px; line-height:1.4;"></div>
+            </div>
+
+            <!-- Distance context (live updates) -->
+            <div class="travel-results" id="travel-distance-context" style="display:none;">
+              <div class="travel-result-row">
+                <span class="travel-result-label">Current Dist:</span>
+                <span id="res-current-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Closest:</span>
+                <span id="res-min-dist" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Farthest:</span>
+                <span id="res-max-dist" class="travel-result-value">—</span>
+              </div>
             </div>
 
             <!-- Journey Timeline -->
@@ -264,6 +288,7 @@
         </div>
       </div>
       <div id="body-tooltip" class="body-tooltip" style="display:none;"></div>
+      <div id="canvas-context-menu" class="canvas-context-menu" style="display:none;"></div>
     <div id="version-watermark" class="version-watermark" title="Version">—</div>
       <div id="loading" class="loading-overlay" style="display:none">
         <div class="spinner"></div>
