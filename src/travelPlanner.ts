@@ -317,9 +317,9 @@ export function initTravelPlanner(state: AppState): void {
     // Gravity assist indicator
     if (tp.useGravityAssists && resFailureReason) {
       if (tp.useMultiLegChains) {
-        resFailureReason.textContent = '🔬 Multi-leg gravity assist chains active (up to 2 assists — FRD-063)';
+        resFailureReason.textContent = '🔬 Multi-leg gravity assist chains active (patched conic physics — FRD-063)';
       } else {
-        resFailureReason.textContent = '🔬 Single gravity assist visualization active (FRD-063)';
+        resFailureReason.textContent = '🔬 Gravity assist visualization active (patched conic physics — FRD-063)';
       }
       resFailureReason.style.display = 'block';
       resFailureReason.style.color = '#60a5fa';
@@ -453,7 +453,7 @@ export function initTravelPlanner(state: AppState): void {
     });
   }
 
-  // Toggle: Gravity assists (FRD-063 — visual placeholder active, physics coming)
+  // Toggle: Gravity assists (FRD-063 — real patched conic physics)
   if (gravityAssistCheck) {
     gravityAssistCheck.addEventListener('change', () => {
       tp.useGravityAssists = gravityAssistCheck.checked;

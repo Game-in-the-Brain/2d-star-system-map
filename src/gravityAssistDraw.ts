@@ -6,7 +6,10 @@
  * The physics engine (separate) computes waypoints; this module draws them.
  */
 
-import type { SceneBody, AppState } from './types';
+import type { SceneBody, AppState, GravityAssist } from './types';
+import { findAssistOpportunities } from './gravityAssistPhysics';
+import { getBodyPositionAU, hillSphereAU } from './travelPhysics';
+import { logScaleDistance } from './camera';
 
 export interface AssistWaypoint {
   bodyId: string;
@@ -253,95 +256,117 @@ export function drawGravityAssistTrajectory(
 }
 
 /**
- * Generate placeholder waypoints for visual demonstration.
- * Finds bodies near the chord between origin and destination and creates
- * hypothetical assist waypoints. Used before FRD-063 physics is fully implemented.
+ * Generate real waypoints from the patched-conic physics engine.
+ * Converts GravityAssist results into screen-space AssistWaypoints.
  */
-export function generatePlaceholderWaypoints(
+export function generateRealWaypoints(
   state: AppState,
   originId: string,
   destId: string,
-  frames: Map<string, { x: number; y: number }>,
-  maxAssists: number = 2
+  starMassSolar: number,
+  departureDayOffset: number,
+  useMultiLegChains: boolean,
+  maxAssists: number
 ): AssistWaypoint[] {
-  const originFrame = frames.get(originId);
-  const destFrame = frames.get(destId);
-  if (!originFrame || !destFrame) return [];
+  const origin = state.bodies.find(b => b.id === originId);
+  const destination = state.bodies.find(b => b.id === destId);
+  if (!origin || !destination) return [];
+
+  const assists = findAssistOpportunities(
+    origin, destination, state.bodies, starMassSolar, departureDayOffset, useMultiLegChains
+  );
+
+  // Skip chain assists (bodyId contains "+") for renderer — they need special multi-leg drawing
+  const singleAssists = assists.filter(a => !a.bodyId.includes('+'));
+  const limitedAssists = singleAssists.slice(0, maxAssists);
+
+  const { camera, width, height } = state;
+  const cx = width / 2;
+  const cy = height / 2;
+  const originX = cx - camera.x * camera.zoom;
+  const originY = cy - camera.y * camera.zoom;
+
+  function bodyScreenPosAt(body: SceneBody, dayOffset: number): { x: number; y: number } {
+    const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+    const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * camera.zoom : 0;
+    return {
+      x: originX + Math.cos(angle) * distPx,
+      y: originY + Math.sin(angle) * distPx,
+    };
+  }
 
   const waypoints: AssistWaypoint[] = [];
 
-  for (const body of state.bodies) {
-    if (body.id === originId || body.id === destId) continue;
-    if (body.type.startsWith('star')) continue;
+  for (let i = 0; i < limitedAssists.length; i++) {
+    const assist = limitedAssists[i];
+    const body = state.bodies.find(b => b.id === assist.bodyId);
+    if (!body) continue;
 
-    const frame = frames.get(body.id);
-    if (!frame) continue;
+    // Body position at flyby time
+    const bodyPos = bodyScreenPosAt(body, assist.flybyDayOffset);
 
-    // Check if body is near the chord from origin to destination
-    const chordDx = destFrame.x - originFrame.x;
-    const chordDy = destFrame.y - originFrame.y;
-    const chordLen = Math.hypot(chordDx, chordDy);
-    if (chordLen < 1) continue;
+    // SOI radius in pixels (from Hill sphere, clamped for visibility)
+    const hillAU = hillSphereAU(body.mass, starMassSolar, body.distanceAU, body.type);
+    const auToPxRatio = body.distanceAU > 0
+      ? (logScaleDistance(body.distanceAU, 80) * camera.zoom) / body.distanceAU
+      : 0;
+    let soiPx = hillAU * auToPxRatio;
+    soiPx = Math.max(18, Math.min(soiPx, 70));
 
-    // Project body onto chord
-    const t = ((frame.x - originFrame.x) * chordDx + (frame.y - originFrame.y) * chordDy) / (chordLen * chordLen);
-    if (t <= 0.1 || t >= 0.9) continue; // Must be between origin and destination
+    // Previous waypoint position (origin or previous assist)
+    let prevPos: { x: number; y: number };
+    if (i === 0) {
+      prevPos = bodyScreenPosAt(origin, departureDayOffset);
+    } else {
+      const prevAssist = limitedAssists[i - 1];
+      const prevBody = state.bodies.find(b => b.id === prevAssist.bodyId);
+      if (!prevBody) continue;
+      prevPos = bodyScreenPosAt(prevBody, prevAssist.flybyDayOffset);
+    }
 
-    const projX = originFrame.x + chordDx * t;
-    const projY = originFrame.y + chordDy * t;
-    const distToChord = Math.hypot(frame.x - projX, frame.y - projY);
+    // Approach direction: from previous position toward body
+    const approachDx = bodyPos.x - prevPos.x;
+    const approachDy = bodyPos.y - prevPos.y;
+    const approachAngle = Math.atan2(approachDy, approachDx);
 
-    // Only include if reasonably close to chord (within ~15% of chord length)
-    if (distToChord > chordLen * 0.15) continue;
+    // Turn angle from physics
+    const turnAngleRad = (assist.turningAngleDeg * Math.PI) / 180;
+    const turnSign = assist.isAccelerating ? 1 : -1;
 
-    // Create a plausible assist waypoint
-    const soiPx = Math.max(20, distToChord * 1.5 + 10);
+    // Exit direction: rotate approach by turn angle
+    const exitAngle = approachAngle + turnSign * turnAngleRad;
 
-    // Entry and exit points on SOI boundary, offset from chord
-    const perpAngle = Math.atan2(frame.y - projY, frame.x - projX);
-    const entryAngle = perpAngle + Math.PI / 2;
-    const exitAngle = perpAngle - Math.PI / 2;
-
+    // Entry and exit on SOI boundary
     const entryPos = {
-      x: frame.x + Math.cos(entryAngle) * soiPx,
-      y: frame.y + Math.sin(entryAngle) * soiPx,
+      x: bodyPos.x - Math.cos(approachAngle) * soiPx,
+      y: bodyPos.y - Math.sin(approachAngle) * soiPx,
     };
     const exitPos = {
-      x: frame.x + Math.cos(exitAngle) * soiPx,
-      y: frame.y + Math.sin(exitAngle) * soiPx,
+      x: bodyPos.x + Math.cos(exitAngle) * soiPx,
+      y: bodyPos.y + Math.sin(exitAngle) * soiPx,
     };
 
-    // Periapsis is closer to body, on the side toward the chord
+    // Periapsis on the bisector, closer to body
+    const midAngle = (approachAngle + exitAngle) / 2;
+    const rpPx = Math.max(3, soiPx * 0.12);
     const periapsisPos = {
-      x: frame.x + Math.cos(perpAngle) * (soiPx * 0.3),
-      y: frame.y + Math.sin(perpAngle) * (soiPx * 0.3),
+      x: bodyPos.x + Math.cos(midAngle) * rpPx,
+      y: bodyPos.y + Math.sin(midAngle) * rpPx,
     };
-
-    // Synthetic turn angle based on proximity (closer = sharper turn)
-    const turnAngleDeg = Math.min(120, 30 + (1 - distToChord / (chordLen * 0.15)) * 90);
-    const deltaVKms = turnAngleDeg * 0.15; // Rough heuristic
 
     waypoints.push({
-      bodyId: body.id,
-      bodyLabel: body.label,
-      bodyPos: { x: frame.x, y: frame.y },
+      bodyId: assist.bodyId,
+      bodyLabel: assist.bodyLabel,
+      bodyPos,
       entryPos,
       exitPos,
       periapsisPos,
-      turnAngleDeg,
-      deltaVKms,
-      side: 'trailing',
+      turnAngleDeg: assist.turningAngleDeg,
+      deltaVKms: assist.deltaVKms,
+      side: assist.isAccelerating ? 'trailing' : 'leading',
       soiRadiusPx: soiPx,
     });
   }
 
-  // Sort waypoints by distance from origin along chord
-  waypoints.sort((a, b) => {
-    const da = Math.hypot(a.bodyPos.x - originFrame.x, a.bodyPos.y - originFrame.y);
-    const db = Math.hypot(b.bodyPos.x - originFrame.x, b.bodyPos.y - originFrame.y);
-    return da - db;
-  });
-
-  // Limit to max assists to avoid visual clutter
-  return waypoints.slice(0, maxAssists);
+  return waypoints;
 }

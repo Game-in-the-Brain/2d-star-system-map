@@ -3,7 +3,7 @@ import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './
 import { logScaleDistance, resetCamera } from './camera';
 import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU } from './travelPhysics';
 import { tickTravelTimeline } from './travelPlanner';
-import { drawGravityAssistTrajectory, generatePlaceholderWaypoints } from './gravityAssistDraw';
+import { drawGravityAssistTrajectory, generateRealWaypoints } from './gravityAssistDraw';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -441,9 +441,13 @@ function drawTravelPlannerOverlays(
       : 0;
 
     if (tp.useGravityAssists) {
-      // FRD-063: Draw multi-leg gravity-assist trajectory
+      // FRD-063: Draw real gravity-assist trajectory from patched-conic physics
       const maxAssists = tp.useMultiLegChains ? 2 : 1;
-      const waypoints = generatePlaceholderWaypoints(state, tp.originId, tp.destinationId, frames, maxAssists);
+      const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+      const departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset;
+      const waypoints = generateRealWaypoints(
+        state, tp.originId, tp.destinationId, starMassSolar, departureDay, tp.useMultiLegChains, maxAssists
+      );
       drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
     } else {
       // Standard direct chord
