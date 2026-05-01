@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">2D Star System Map</string>
+    <string name="title_activity_main">2D Star System Map</string>
+    <string name="package_name">com.gi7b.star_system_map_2d</string>
+    <string name="custom_url_scheme">com.gi7b.star_system_map_2d</string>
+</resources>

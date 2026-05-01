@@ -1,7 +1,7 @@
 # Issue: Loading a JSON world produces no 2D map output
 
 **Severity**: Critical  
-**Status**: Under investigation / fix in progress  
+**Status**: ✅ All bugs fixed in working tree (2026-05-01). Awaiting commit & deployment.  
 **Discovered**: 2026-04-23  
 **Reporter**: User (regression observed after FRD-049 rollback staging)
 
@@ -20,6 +20,20 @@ After the FRD-049 (Travel Timeline Slider) feature was staged for rollback, load
 3. Canvas remains completely black. No system renders.
 4. Subsequent loads also produce nothing (not just the first one).
 5. No visible error or alert is shown to the user.
+
+---
+
+## Fix Verification (2026-05-01)
+
+All five bugs have been verified fixed in the current working tree:
+
+| Bug | File | Status | Evidence |
+|-----|------|--------|----------|
+| 1 — RAF loop dies on exception | `src/renderer.ts` | ✅ Fixed | `rafId = requestAnimationFrame(loop)` scheduled on **line 44** (first line of loop body); `initCamera()` + `draw()` wrapped in `try/catch` on lines 57–62 |
+| 2 — Zone band gradient crash | `src/renderer.ts` | ✅ Fixed | `innerR >= outerR` guard on **line 220**; `zone.max == null` check on **line 217** |
+| 3 — Gas class normalization | `src/dataAdapter.ts` | ✅ Fixed | `normalizeGasClass(gasClass: number | string): number` on **line 276**; used on **line 183** |
+| 4 — Silent paste failure | `src/main.ts` | ✅ Fixed | `try/catch` with `alert()` around `loadSystemIntoState` on **lines 140–146** |
+| 5 — Travel panel update lag | N/A | ✅ Moot | The stale `travel-selection-changed` event no longer exists. `travelPanel.ts` uses direct DOM listeners (`change`/`input`) — update is instantaneous |
 
 ---
 

@@ -1,2 +1,10 @@
 node_modules/
 tsconfig.tsbuildinfo
+# Wrapper build outputs
+/src-tauri/target
+/src-tauri/gen
+*.msi
+*.appimage
+*.deb
+*.apk
+*.aab

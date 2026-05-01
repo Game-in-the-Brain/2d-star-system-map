@@ -2260,4 +2260,977 @@ export interface WaitResult { waitDays, pathDistanceAU, flightTimeDays, totalTim
 
 ---
 
+## 31. Planned — Curved-Path SOI Avoidance / ΔV Budget Mode (FRD-048 Addendum)
+
+**Status:** 📋 Planned — extends §30 (FRD-048). Not yet implemented.  
+**Isolation guarantee:** One new file (`src/pathDeflector.ts`). Additive-only changes to three files from §30 (`travelCalc.ts`, `soiChecker.ts`, `travelPanel.ts`). Zero changes to renderer, main, dataAdapter, camera, input, or any existing feature file. Toggle: this option appears only inside the SOI-Safe routing panel — Direct mode is completely unaffected.
+
+### 31.1 Concept
+
+When a brachistochrone chord clips a body's SOI, this addendum replaces the arc-approximation detour (§30) with a **geometrically exact two-leg deflection**, priced in ΔV. The ship flies O → M' → D where M' is the original midpoint M shifted perpendicular to the O→D axis by the minimum distance h that clears all intersecting SOIs.
+
+```
+O ──────────── M ──────────── D      (direct, clips SOI)
+                │
+              h │  (perpendicular offset)
+                │
+               M'                    (deflected midpoint)
+O ─────────── M' ─────────────── D   (two-leg clear path)
+```
+
+### 31.2 New file: `src/pathDeflector.ts`
+
+Pure geometry and physics. No DOM, no renderer coupling.
+
+```typescript
+// Returns unit vector perpendicular (90° CCW) to direction O→D
+export function perpUnit(ox, oy, dx, dy): [number, number]
+
+// Binary search for minimum h (AU) that places M' outside all hitting SOIs.
+// maxH = 5 AU cap. Returns null if no clear path found.
+export function minimumOffsetAU(
+  ox, oy, dx, dy,
+  obstacles: TravelBody[],   // only bodies with confirmed SOI hits
+  starEM: number,
+  maxH = 5.0,
+  tolerance = 1e-4
+): number | null
+
+// Total path length of two-leg route O→M'→D given offset h
+export function twoLegDistanceAU(ox, oy, dx, dy, h: number): number
+
+// Brachistochrone ΔV in km/s: 2 × √(a × d/2), result in km/s
+export function brachistochroneDeltaV_kms(distanceAU: number, accelG: number): number
+
+// Extra ΔV for deflected path vs direct: max(0, ΔV_deflected − ΔV_direct)
+export function deflectionExtraDeltaV_kms(directAU, deflectedAU, accelG): number
+```
+
+**Binary search convergence:** `maxH=5`, `tolerance=1e-4` → at most ⌈log₂(50000)⌉ = 16 iterations. Well within any frame budget (called once per Calculate press, not every frame).
+
+**Sign convention:** Only positive h (CCW perpendicular) is searched. ΔV cost is identical for ±h. A future canvas overlay (deferred) can choose the visually cleaner side.
+
+**Why sublinear ΔV cost?** Brachistochrone ΔV ∝ √distance. A 10% longer path costs ~5% more ΔV — deflections are cheap in ΔV, expensive only for large offsets. The comparison table will show players that the curve option is almost always ΔV-efficient; the wait option wins only on very tight budgets.
+
+### 31.3 Additive change to `src/travelCalc.ts`
+
+```typescript
+// Append only — no existing types or functions changed:
+
+export interface CurveResult {
+  offsetH_AU: number;           // perpendicular midpoint shift required (AU)
+  deflectedDistanceAU: number;  // total two-leg path length
+  extraDeltaV_kms: number;      // ΔV above direct brachistochrone
+  budgetSufficient: boolean;    // true if baseline + extraDV ≤ dvBudget
+  flightTimeDays: number;
+  totalTimeDays: number;        // = flightTimeDays (departs now)
+}
+
+// Add optional field to existing TravelResult interface (backwards-compatible):
+//   curveAlternative?: CurveResult;
+```
+
+### 31.4 Additive change to `src/soiChecker.ts`
+
+```typescript
+// Append only — no existing functions changed:
+
+export function computeCurveAvoidance(
+  origin: TravelBody,
+  destination: TravelBody,
+  soiHits: SoiHit[],
+  allObstacles: TravelBody[],
+  starEM: number,
+  accelG: number,
+  dvBudget_kms: number
+): CurveResult | null
+// Calls minimumOffsetAU → twoLegDistanceAU → deflectionExtraDeltaV_kms.
+// Returns null if no clear deflection found within 5 AU offset.
+```
+
+### 31.5 UI changes in `src/travelPanel.ts`
+
+Add one input below the existing acceleration field (visible only in SOI-Safe mode):
+
+```
+Budget: [____] km/s ΔV
+```
+
+When SOI-Safe mode has intersections, replace the separate Detour/Wait blocks with a unified three-option comparison table:
+
+```
+YOUR OPTIONS           TIME         ΔV COST
+─────────────────────────────────────────────
+① Wait for clear       22.6 days    baseline
+  (wait 18.5d + 4.1d flight)
+
+② Curve around          4.9 days    +12 km/s
+  (offset 0.31 AU, departs now)
+  [⚠ Exceeds budget]   ← only shown if over
+
+③ Direct (unsafe)       4.2 days    baseline
+  Path crosses [BodyName] SOI
+```
+
+Display rules:
+- Option ① shown if `findClearDepartureWindow()` returns a result; otherwise "No clear window in 365 days."
+- Option ② shown if `computeCurveAvoidance()` returns non-null. Budget warning added if `!budgetSufficient`. If null: "No viable deflection path."
+- Option ③ always shown — the direct unsafe baseline.
+- Budget field is advisory only — it never blocks a calculation, only adds/removes the ⚠ flag.
+
+### 31.6 Complete change surface
+
+| File | Change |
+|------|--------|
+| `src/pathDeflector.ts` | NEW — all deflection geometry/physics |
+| `src/travelCalc.ts` | Add `CurveResult` interface; add optional `curveAlternative?` to `TravelResult` |
+| `src/soiChecker.ts` | Add `computeCurveAvoidance()` — no existing code touched |
+| `src/travelPanel.ts` | Add budget input; replace detour/wait blocks with three-option table |
+| **All other files** | **Untouched** |
+
+### 31.7 Acceptance criteria
+
+- [ ] Direct mode result is byte-identical to §30 baseline — no budget field visible, no option table.
+- [ ] SOI-Safe with no intersections: option table hidden, "Path is clear" shown.
+- [ ] SOI-Safe with one intersection: all three options shown with correct times.
+- [ ] `minimumOffsetAU` converges within 20 iterations for a Jupiter-analogue SOI at 5 AU.
+- [ ] `extraDeltaV_kms` for a zero-offset path (h=0) returns exactly 0.
+- [ ] Budget set to exactly baseline + extraDV → `budgetSufficient = true`. 1 km/s below → `budgetSufficient = false`, ⚠ shown.
+- [ ] `computeCurveAvoidance` returning null shows "No viable deflection path" — no crash, no blank.
+- [ ] `npm run build` passes with zero TypeScript errors after adding all three files.
+
+---
+
+## 32. Planned — Hohmann Transfer Planner (FRD-049 v1/v2/v3)
+
+**Status:** 📋 Planned — three sequential versions. Prerequisite: §30 + §31 implemented and passing.  
+**Tab placement:** Second tab inside the Travel Calculator panel (alongside the existing Brachistochrone tab).  
+**Isolation guarantee:** All Hohmann math lives in `src/hohmannPlanner.ts`. FRD-048/FRD-048-A tab is untouched by all three versions. Each version is a strict append to the previous — no v1 function is modified by v2, no v1/v2 function is modified by v3.
+
+### 32.0 Conflict boundary: Hohmann vs. Brachistochrone
+
+These two transfer types live in separate tabs and separate files. They share only:
+- The `TravelBody` type (read-only)
+- The `dvBudget_kms` input field value (single source of truth in panel state)
+- `brachistochroneDays()` and `brachistochroneDeltaV_kms()` from `src/pathDeflector.ts` (imported, not modified)
+
+No physics function from FRD-048/FRD-048-A is overridden or shadowed. If both tabs are open simultaneously, they calculate independently and display in parallel.
+
+### 32.1 Version map
+
+| Version | Section | Transfer type | Constraint model | Solver |
+|---------|---------|---------------|-----------------|--------|
+| v1 | §32.2 | Hohmann (two-impulse ellipse) | ΔV minimised, time open | Analytical — Kepler + vis-viva |
+| v2 | §32.3 | Hohmann + optional brachistochrone legs | Time locked, ΔV derived | Parameter sweep over energy factors |
+| v3 | §32.4 | Mixed-mode | Time AND ΔV locked simultaneously | Same sweep, dual-filter + relaxation guidance |
+
+---
+
+### 32.2 v1 — Minimum ΔV, Time Open (FRD-049)
+
+**Answers:** "What is the cheapest possible trip, and how long will it take?"
+
+#### Physics
+
+```
+r₁ = origin orbital radius (AU)
+r₂ = destination orbital radius (AU)
+M  = star mass (solar masses)
+
+Transfer ellipse semi-major axis:    a_t = (r₁ + r₂) / 2
+
+Transfer time (half ellipse period):
+  T_transfer_days = (365.25 / 2) × √(a_t³ / M)
+
+Circular orbital velocity at r (m/s):
+  v_circ = √(G_SI × M × M_SUN_KG / (r_AU × AU_M))
+
+Vis-viva velocity at r on ellipse with semi-major a (m/s):
+  v_vv = √(G_SI × M × M_SUN_KG × (2/r_m − 1/a_m))
+
+ΔV₁ = |v_vv(r₁, a_t) − v_circ(r₁)|   (departure burn)
+ΔV₂ = |v_circ(r₂) − v_vv(r₂, a_t)|   (arrival burn)
+ΔV_total = ΔV₁ + ΔV₂
+```
+
+#### Phase angle and departure window
+
+```
+Required phase angle at departure:
+  θ_req = π − ω_dest × T_transfer
+  ω_dest = 2π / T_dest_orbital_period   (rad/day)
+
+Current phase angle: destinationAngleRad − originAngleRad (mod 2π)
+
+Synodic period:  T_syn = 1 / |1/T₁ − 1/T₂|
+Wait days: dθ / ω_syn   where dθ = (θ_req − θ_current) mod 2π
+```
+
+#### New file: `src/hohmannPlanner.ts`
+
+```typescript
+export interface HohmannInput {
+  originAU: number;
+  destinationAU: number;
+  originAngleRad: number;
+  destinationAngleRad: number;
+  starMassSol: number;
+  dvBudget_kms: number;
+}
+
+export interface HohmannResult {
+  dv1_kms: number;
+  dv2_kms: number;
+  dvTotal_kms: number;
+  budgetSufficient: boolean;
+  transferTimeDays: number;
+  waitForWindowDays: number;
+  totalTimeDays: number;
+  synodicPeriodDays: number;
+  nextWindowEpoch: string;   // "in X.X days"
+}
+
+export function computeHohmann(input: HohmannInput): HohmannResult
+```
+
+#### Tab UI
+
+```
+┌────────────────────────────────────────────┐
+│ [ Brachistochrone ]  [ Hohmann ]           │
+├────────────────────────────────────────────┤
+│ From: [dropdown]    To: [dropdown]         │
+│ Budget: [____] km/s ΔV                     │
+├────────────────────────────────────────────┤
+│ Departure burn (ΔV₁):   1.42 km/s         │
+│ Arrival burn  (ΔV₂):    1.06 km/s         │
+│ Total ΔV:                2.48 km/s         │
+│ [⚠ Exceeds budget]                         │
+│ Transfer coast time:   258.8 days          │
+│ Wait for window:        43.2 days          │
+│ TOTAL TRIP TIME:       302.0 days          │
+│ Synodic period:        779.9 days          │
+└────────────────────────────────────────────┘
+```
+
+#### Change surface (v1)
+
+| File | Change |
+|------|--------|
+| `src/hohmannPlanner.ts` | NEW — all physics |
+| `src/travelPanel.ts` | Add second tab pane; wire to `computeHohmann()` |
+| `src/types.ts` | Add `HohmannInput`, `HohmannResult` (additive) |
+| All other files | **Untouched** |
+
+#### Acceptance criteria (v1)
+
+- [ ] Earth→Mars analogue (1.0 AU → 1.524 AU, 1.0 M☉): ΔV₁ ≈ 2.94 km/s, ΔV₂ ≈ 2.65 km/s, transfer ≈ 258.9 days. All within 1%.
+- [ ] Switching tabs does not reset Brachistochrone tab inputs.
+- [ ] Budget field shared between both tabs (single source of truth in panel state).
+- [ ] `waitForWindowDays = 0` when bodies are manually set to the exact required phase angle.
+
+---
+
+### 32.3 v2 — Time-Constrained Transfer (FRD-049-A)
+
+**Prerequisite:** `src/hohmannPlanner.ts` passing v1 criteria.  
+**Answers:** "Given I must arrive within T days, how much more ΔV does that cost, and which legs need brachistochrone thrust?"
+
+#### Constraint model
+
+Two controls added to the tab:
+```
+☑ Time lock:  Max [____] days
+ΔV budget:    [____] km/s    (shared, always visible)
+```
+Time lock **off** → identical to v1. Time lock **on** → parameter sweep.
+
+#### Solver: parameter sweep
+
+```
+1. Departure offset: 0 → synodic_period, step = 1 day
+2. Energy factor f: 1.0 → 3.0, step = 0.05
+   T_f ≈ T_hohmann / f^(3/2)
+   ΔV_f ≈ ΔV_hohmann × √f
+3. Leg mode: 'ellipse' | 'brachistochrone'
+   If ellipse at factor f still exceeds max time → switch to brachistochrone leg
+   using brachistochroneDays() and brachistochroneDeltaV_kms() from pathDeflector.ts
+```
+
+Finds the Pareto front; returns candidate closest to time cap with lowest ΔV.
+
+#### Additive types (append to `src/hohmannPlanner.ts`)
+
+```typescript
+export type LegMode = 'ellipse' | 'brachistochrone';
+
+export interface TimedTransferInput extends HohmannInput {
+  maxTotalTimeDays: number;
+  accelG: number;              // required for brachistochrone legs
+}
+
+export interface LegResult {
+  mode: LegMode;
+  dv_kms: number;
+  timeDays: number;
+  energyFactor?: number;
+}
+
+export interface TimedTransferResult {
+  feasible: boolean;
+  waitForWindowDays: number;
+  leg1: LegResult;
+  leg2: LegResult;
+  dvTotal_kms: number;
+  budgetSufficient: boolean;
+  totalTimeDays: number;
+  dvPremium_kms: number;     // extra ΔV above v1 Hohmann baseline
+  timeSaving_days: number;   // days saved vs v1 Hohmann baseline
+}
+
+export function computeTimedTransfer(input: TimedTransferInput): TimedTransferResult
+```
+
+#### Tab UI addition
+
+```
+☑ Time lock:  Max [____] days
+Accel: [____] G  (active only when time lock is on)
+
+Leg 1:  Ellipse (f=1.8)   142.1 days   ΔV₁: 3.94 km/s
+Leg 2:  Ellipse (f=1.8)   —            ΔV₂: 2.94 km/s
+Wait for window:   43.2 days
+TOTAL TIME:       185.3 days  ✓ within cap
+TOTAL ΔV:          6.88 km/s
+ΔV premium vs Hohmann: +4.40 km/s
+Time saved vs Hohmann: +116.7 days
+[⚠ No solution within constraints]   ← only if feasible = false
+```
+
+#### Change surface (v2)
+
+| File | Change |
+|------|--------|
+| `src/hohmannPlanner.ts` | Append `TimedTransferInput/Result`, `LegResult`, `computeTimedTransfer()` |
+| `src/travelPanel.ts` | Add time-lock checkbox + accel field; render `TimedTransferResult` |
+| `src/pathDeflector.ts` | Imported (read-only) for brachistochrone leg math |
+| All other files | **Untouched** |
+
+#### Acceptance criteria (v2)
+
+- [ ] Time lock OFF: result matches v1 identically.
+- [ ] Time lock ON, max time > Hohmann total: returns `dvPremium = 0`, `feasible = true`.
+- [ ] Time lock ON, max time < Hohmann coast time: solver finds f > 1 ellipse or brachistochrone leg.
+- [ ] `feasible = false` displayed cleanly — no crash, no blank.
+- [ ] Accel field greyed when time lock is off.
+
+---
+
+### 32.4 v3 — Dual Lock: Time AND ΔV (FRD-049-B)
+
+**Prerequisite:** v2 passing.  
+**Answers:** "Given both a time cap and a ΔV cap, is there any solution? If not, what must I relax?"
+
+#### Four lock states
+
+```typescript
+export type LockState =
+  | 'none'   // v1: minimise ΔV, time open
+  | 'time'   // v2: minimise ΔV within time cap
+  | 'dv'     // NEW: minimise time within ΔV cap
+  | 'both';  // NEW: feasibility check; show relaxation if infeasible
+```
+
+#### `dv` lock
+
+Reuse the v2 sweep (`sweepTransferCandidates()` — internal refactor of v2 loop, returns full Pareto array). Filter: `dvTotal ≤ dvBudget`, sort by `totalTimeDays` ascending. Pick fastest. No new math.
+
+**Note for Kimi:** Refactor the v2 sweep loop into an internal `sweepTransferCandidates()` that returns the full candidate array. `computeTimedTransfer()` stays public and unchanged — it just calls `sweepTransferCandidates()` and picks by its v2 criterion. This refactor must not change v2 acceptance test outputs.
+
+#### `both` lock — relaxation guidance
+
+If feasible zone is empty:
+```
+No solution within both constraints.
+To meet time cap (T days) → need at least X km/s ΔV  (+Y km/s more)
+To meet ΔV cap  (D km/s) → need at least N days       (+M days more)
+```
+Both numbers are read from the Pareto front — no extra calculation.
+
+#### Additive types (append to `src/hohmannPlanner.ts`)
+
+```typescript
+export interface DualLockInput extends TimedTransferInput {
+  lockState: LockState;
+}
+
+export interface RelaxationGuide {
+  minDvForTimeCap_kms: number;
+  minTimeForDvCap_days: number;
+}
+
+export interface DualLockResult extends TimedTransferResult {
+  lockState: LockState;
+  relaxation?: RelaxationGuide;  // populated only when feasible = false
+}
+
+export function computeDualLock(input: DualLockInput): DualLockResult
+```
+
+#### Tab UI addition
+
+```
+☑ Time lock:  Max [____] days
+☑ ΔV lock:    Max [____] km/s
+
+FEASIBILITY
+✓ Solution found
+— OR —
+✗ No solution within both constraints
+  To meet time cap → need +4.40 km/s more
+  To meet ΔV cap  → need +117 days more
+
+[result block — same layout as v2]
+```
+
+#### Change surface (v3)
+
+| File | Change |
+|------|--------|
+| `src/hohmannPlanner.ts` | Append `DualLockInput/Result`, `RelaxationGuide`, `LockState`, `computeDualLock()`; internal `sweepTransferCandidates()` refactor |
+| `src/travelPanel.ts` | Add second lock checkbox; add relaxation guidance block |
+| All other files | **Untouched** |
+
+#### Acceptance criteria (v3)
+
+- [ ] `lockState = 'none'`: identical to v1.
+- [ ] `lockState = 'time'`: identical to v2.
+- [ ] `lockState = 'dv'`: returns fastest trip where `dvTotal ≤ dvBudget`.
+- [ ] `lockState = 'both'`, feasible: satisfies both caps.
+- [ ] `lockState = 'both'`, infeasible: relaxation guidance shows correct minimums sourced from Pareto front.
+- [ ] `sweepTransferCandidates()` refactor does not change `computeTimedTransfer()` output — v2 tests still pass.
+
+---
+
+### 32.5 Cross-version integration summary
+
+| What | v1 | v2 | v3 |
+|------|----|----|-----|
+| `src/hohmannPlanner.ts` | Created | Appended | Appended |
+| `src/travelPanel.ts` | Tab added | Lock checkbox added | Second lock + relaxation added |
+| `src/pathDeflector.ts` | — | Imported (read-only) | No change |
+| FRD-048 / FRD-048-A files | **Untouched** | **Untouched** | **Untouched** |
+
+Rollback v3 = delete `dv`/`both` branches and `DualLockResult`. Rollback v2 = delete `computeTimedTransfer()` and `TimedTransferResult`. v1 survives both rollbacks intact.
+
+---
+
+## §33 — Multi-Star System Map (FRD-061)
+
+**Status:** Planned  
+**Prerequisite:** §32 (Hohmann Planner) passing.  
+**Scope:** Extends MWG companion-star generation with full orbital parameters, and extends the 2D Map to render multi-star systems in a dedicated barycenter-centred view. All existing single-star map features remain intact and unchanged.
+
+### 33.1 Feature Summary
+
+When MWG generates a system with one or more companion stars, the 2D Map auto-detects the presence of companions and activates **Multi-Star Mode**. In this mode:
+
+- The **barycenter** of the primary + innermost companion pair is placed at the canvas centre (replacing the single-star anchor).
+- All stars orbit the barycenter on **elliptical paths** (Keplerian mechanics, eccentricity from payload).
+- Each star retains its own planetary system in S-type stable zones; P-type circumbinary zone planets orbit the barycenter.
+- The **Travel Planner** extends to support inter-stellar journeys within the system — departure from a planet around Star A, arrival at a planet around Star B.
+- All existing UI (time controls, zoom, tooltips, SOI rings, travel planner chord) work unchanged within each star's reference frame.
+
+### 33.2 Companion Type Taxonomy
+
+| Companion type | Distance range | Typical eccentricity | Planetary zones |
+|---|---|---|---|
+| **Tight binary** | 0–25 AU | 0.1–0.6 | S-type only; P-type if separation < 5 AU unlikely |
+| **Wide binary** | 25–200 AU | 0.1–0.9 | S-type around each star; P-type circumbinary possible |
+| **Hierarchical triple** | Inner pair < 25 AU; tertiary > 100 AU | inner: variable; outer: 0.0–0.5 | Inner pair treated as tight binary; tertiary treated as wide companion to the pair |
+
+---
+
+## §34 — MWG: New Companion Star Orbital Parameters
+
+**Status:** Planned  
+**Files:** `src/types/index.ts`, `src/lib/generator.ts`, `src/lib/stellarData.ts`
+
+### 34.1 New fields on `Star` interface
+
+```typescript
+// Append to existing Star interface in src/types/index.ts
+export interface Star {
+  // ... existing fields ...
+  eccentricity?: number;       // [0.0, 0.95) — 0 = circular; only on companion stars
+  inclination?: number;        // degrees [0, 30] — orbital plane tilt relative to primary's plane
+  argPeriapsis?: number;       // radians [0, 2π] — orientation of periapsis in orbital plane
+  meanAnomalyAtEpoch?: number; // radians [0, 2π] — phase at map epoch
+  periodYears?: number;        // pre-calculated orbital period (years); derived, not rolled
+}
+```
+
+**Backward compatibility:** All new fields are optional (`?`). Existing payloads that lack them default to `e=0` (circular), `i=0`, and a random `argPeriapsis`/`meanAnomalyAtEpoch` derived from the existing seed hash. No breaking change.
+
+### 34.2 Eccentricity generation
+
+Add to `src/lib/stellarData.ts`:
+
+```typescript
+/**
+ * Roll companion-star orbital eccentricity.
+ * 2D6 → index into eccentricity table.
+ * Higher rolls → higher eccentricity (skewed toward moderate values, rare extremes).
+ */
+export function rollCompanionEccentricity(separationAU: number): number {
+  // Tighter binaries statistically have lower eccentricity (tidal circularisation)
+  const isTight = separationAU < 10;
+  const roll = roll2D6().value; // 2–12
+  const table = isTight
+    ? [0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.32, 0.40, 0.50, 0.60, 0.72]
+    : [0.05, 0.10, 0.18, 0.28, 0.38, 0.48, 0.56, 0.64, 0.72, 0.80, 0.90];
+  return table[roll - 2]; // roll 2 → index 0, roll 12 → index 10
+}
+```
+
+Tight binaries (< 10 AU separation) use a tidal-circularisation-weighted table; wide pairs use a flat(ish) distribution reaching e=0.90.
+
+### 34.3 Period calculation
+
+Pre-calculate period at generation time and store it (avoids recalculation in renderer):
+
+```typescript
+// In generator.ts companion generation block, after orbitDistance is assigned
+import { SOLAR_TO_EM } from './moons'; // or define locally
+const totalMassSolar = primaryStar.mass + companionStar.mass;
+// Kepler's 3rd Law: T² = a³ / M_total  (in solar units: T in years, a in AU, M in M☉)
+companionStar.periodYears = Math.sqrt(Math.pow(companionStar.orbitDistance, 3) / totalMassSolar);
+```
+
+### 34.4 Inclination and phase
+
+```typescript
+// Inclination: small random tilt (0–30°), uniform roll 1D30
+companionStar.inclination = Math.floor(Math.random() * 31);
+
+// Argument of periapsis and mean anomaly at epoch: seeded from system key
+// Use same hash function already used for planet angles
+companionStar.argPeriapsis = hashToFloat(`${system.key}-comp-${idx}-arg`) * Math.PI * 2;
+companionStar.meanAnomalyAtEpoch = hashToFloat(`${system.key}-comp-${idx}-m0`) * Math.PI * 2;
+```
+
+### 34.5 Change surface (MWG)
+
+| File | Change |
+|------|--------|
+| `src/types/index.ts` | Append 5 optional fields to `Star` interface |
+| `src/lib/stellarData.ts` | Add `rollCompanionEccentricity()` |
+| `src/lib/generator.ts` | Call new function; compute period; assign inclination/phase in companion generation block |
+| All other MWG files | **Untouched** |
+
+---
+
+## §35 — Barycenter Coordinate Frame
+
+**Status:** Planned  
+**Files:** `src/binaryOrbit.ts` (new), `src/dataAdapter.ts` (extend)
+
+### 35.1 Barycenter position
+
+For a primary–companion pair:
+
+```
+a_total  = companion.orbitDistance  (AU, semi-major axis of separation)
+a_primary  = a_total × m_companion / (m_primary + m_companion)
+a_companion = a_total × m_primary  / (m_primary + m_companion)
+```
+
+The barycenter is placed at canvas centre. The primary orbits it at `a_primary`, the companion at `a_companion`. Both share the same eccentricity `e`, period `T`, and phase; they are always on opposite sides of the barycenter.
+
+For a hierarchical triple (primary + companion A + companion B):
+- Solve the inner pair first (primary + closest companion → inner barycenter)
+- Treat the inner pair as a combined mass object for the outer companion
+
+### 35.2 New module: `src/binaryOrbit.ts`
+
+```typescript
+import type { SceneBody } from './types';
+
+export interface BinaryConfig {
+  primaryMassSolar: number;
+  companionMassSolar: number;
+  semiMajorAU: number;         // a_total (separation)
+  eccentricity: number;
+  periodDays: number;
+  argPeriapsisRad: number;
+  meanAnomalyAtEpochRad: number;
+}
+
+/** Solve Kepler's equation M = E − e·sin(E) by Newton-Raphson (≤10 iterations). */
+export function solveKepler(M: number, e: number): number {
+  let E = M;
+  for (let i = 0; i < 10; i++) {
+    const dE = (M - E + e * Math.sin(E)) / (1 - e * Math.cos(E));
+    E += dE;
+    if (Math.abs(dE) < 1e-9) break;
+  }
+  return E;
+}
+
+/** True anomaly from eccentric anomaly. */
+export function trueAnomaly(E: number, e: number): number {
+  return 2 * Math.atan2(
+    Math.sqrt(1 + e) * Math.sin(E / 2),
+    Math.sqrt(1 - e) * Math.cos(E / 2)
+  );
+}
+
+/**
+ * Position of a body in its orbit at day offset from epoch.
+ * Returns {x, y} in AU relative to the focus (barycenter).
+ * semiMajorAU is the body's semi-major axis relative to barycenter (not separation a_total).
+ */
+export function orbitPositionAU(
+  semiMajorAU: number,
+  e: number,
+  periodDays: number,
+  argPeriapsisRad: number,
+  meanAnomalyAtEpochRad: number,
+  dayOffset: number
+): { x: number; y: number } {
+  const n = (2 * Math.PI) / periodDays;            // mean motion (rad/day)
+  const M = (meanAnomalyAtEpochRad + n * dayOffset) % (2 * Math.PI);
+  const E = solveKepler(M, e);
+  const nu = trueAnomaly(E, e);
+  const r = semiMajorAU * (1 - e * Math.cos(E));  // distance from focus
+  return {
+    x: r * Math.cos(nu + argPeriapsisRad),
+    y: r * Math.sin(nu + argPeriapsisRad),
+  };
+}
+
+/** Compute barycentric semi-major axes for both stars. */
+export function barycentricAxes(config: BinaryConfig): { a1AU: number; a2AU: number } {
+  const total = config.primaryMassSolar + config.companionMassSolar;
+  return {
+    a1AU: config.semiMajorAU * config.companionMassSolar / total,  // primary
+    a2AU: config.semiMajorAU * config.primaryMassSolar / total,    // companion
+  };
+}
+```
+
+### 35.3 Scene graph changes in `dataAdapter.ts`
+
+When `system.companionStars` is non-empty:
+
+1. Set `state.isBinaryMode = true` and store `BinaryConfig` on state.
+2. The primary star `SceneBody` gets `distanceAU = a1AU` (its barycentric orbit radius).
+3. Each companion `SceneBody` gets `distanceAU = a2AU` and the full orbital elements stored in new optional fields.
+4. Planets around each star keep their heliocentric `distanceAU` (relative to their host star, unchanged).
+5. The renderer reads `state.isBinaryMode` to choose the rendering path.
+
+---
+
+## §36 — Elliptical Orbit Rendering
+
+**Status:** Planned  
+**Files:** `src/renderer.ts` (extend), `src/binaryOrbit.ts` (new, §35)
+
+### 36.1 Canvas anchor change in binary mode
+
+Single-star mode: primary star at canvas centre `(width/2 - camera.x * zoom, height/2 - camera.y * zoom)`.  
+Binary mode: **barycenter** at canvas centre. Both stars move relative to it.
+
+No new camera variables; the existing `camera.{x,y,zoom}` pan/zoom applies to the barycenter anchor unchanged.
+
+### 36.2 Drawing elliptical orbit paths
+
+Replace the `ctx.arc(...)` circle currently drawn for companion orbits:
+
+```typescript
+function drawEllipticalOrbit(
+  ctx: CanvasRenderingContext2D,
+  baryX: number, baryY: number,
+  semiMajorPx: number,         // a1 or a2 in screen pixels
+  e: number,
+  argPeriapsisRad: number,
+  zoom: number
+): void {
+  const b = semiMajorPx * Math.sqrt(1 - e * e);  // semi-minor axis
+  const cPx = semiMajorPx * e;                    // focus offset from ellipse centre
+
+  ctx.save();
+  ctx.translate(baryX, baryY);
+  ctx.rotate(argPeriapsisRad);
+  ctx.translate(-cPx, 0);                         // shift so focus = barycenter
+  ctx.beginPath();
+  ctx.ellipse(0, 0, semiMajorPx, b, 0, 0, Math.PI * 2);
+  ctx.restore();
+}
+```
+
+Star orbit paths use `strokeStyle = '#ffffff33'` (faint white), matching the existing planet orbit ring style.
+
+### 36.3 Star position each frame
+
+Each frame, compute star screen positions via `orbitPositionAU()` from `binaryOrbit.ts`, then project through the same `logScaleDistance` + zoom pipeline used for L1 planets. The resulting `{x, y}` replaces the hardcoded `(width/2, height/2)` star anchor for each respective star.
+
+### 36.4 Planet screen positions in binary mode
+
+Planets remain in their host star's reference frame. Their screen position is:
+
+```
+planetScreenX = starScreenX + cos(angle) × logScaleDistance(planetAU, 80) × zoom
+planetScreenY = starScreenY + sin(angle) × logScaleDistance(planetAU, 80) × zoom
+```
+
+No change to planet `SceneBody` data. The star's current screen position replaces the static canvas-centre anchor. The existing `computeBodyFrames` loop gains a per-body `anchorX / anchorY` lookup (instead of a single global `originX / originY`).
+
+---
+
+## §37 — Stability Zone Classification (Holman-Wiegert)
+
+**Status:** Planned  
+**Files:** `src/binaryOrbit.ts` (append), `src/renderer.ts` (zone overlay)
+
+### 37.1 Critical semi-major axes
+
+From Holman & Wiegert 1999 (empirical fits, circular binary as zero-order):
+
+```typescript
+/**
+ * S-type critical semi-major axis — maximum stable planet orbit around one star.
+ * μ = m2 / (m1 + m2), e = binary eccentricity.
+ * Returns AU; multiply by 0.8–0.9 for a conservative GM-safe zone.
+ */
+export function sTypeCriticalAU(semiMajorAU: number, mu: number, e: number): number {
+  return semiMajorAU * (
+    0.464 - 0.380 * mu - 0.631 * e + 0.586 * mu * e + 0.150 * e * e - 0.198 * mu * e * e
+  );
+}
+
+/**
+ * P-type critical semi-major axis — minimum stable circumbinary planet orbit.
+ * e = binary eccentricity, mu = m2 / (m1 + m2).
+ */
+export function pTypeCriticalAU(semiMajorAU: number, mu: number, e: number): number {
+  return semiMajorAU * (
+    1.60 + 5.10 * e - 4.12 * mu - 4.27 * mu * e + 0.019 * e * e - 5.09 * mu * mu
+    + 4.61 * mu * mu * e * e
+  );
+}
+```
+
+### 37.2 Zone visual overlay
+
+When in binary mode, draw two annotation rings per star:
+
+| Ring | Colour | Meaning |
+|------|--------|---------|
+| S-type limit (each star) | `rgba(255, 200, 0, 0.12)` filled disc + dashed border | Max stable planet orbit around this star |
+| P-type limit (barycenter) | `rgba(100, 200, 255, 0.08)` annulus | Min stable circumbinary orbit |
+
+Rings are drawn under all body elements, above the background. They appear only in binary mode. Toggle available via existing "Zones" UI control (same toggle that controls habitable zone shading — extend `state.showZones` to cover stability zones).
+
+### 37.3 Planet stability annotation
+
+In `dataAdapter.ts`, when building a planet's `SceneBody` in binary mode, set a `stabilityZone` field:
+
+```typescript
+stabilityZone?: 'S-type-primary' | 'S-type-companion' | 'P-type' | 'unstable'
+```
+
+Used in tooltips: "S-type (primary star)" — confirms the orbit is gravitationally stable.
+
+---
+
+## §38 — Multi-Star Travel Physics
+
+**Status:** Planned  
+**Files:** `src/travelPhysics.ts` (extend), `src/travelPlanner.ts` (extend)
+
+### 38.1 Hill sphere for stars in binary
+
+The Hill sphere of each star relative to its companion is the gravitational boundary within which planets are stable. For the primary star:
+
+```typescript
+/**
+ * Hill sphere of one star relative to its binary companion.
+ * a_total = separation (AU), m1 = this star (solar), m2 = other star (solar).
+ * Uses periapsis distance a(1-e) for the conservative (smallest) Hill sphere.
+ */
+export function starHillSphereAU(
+  aTotalAU: number, e: number, m1Solar: number, m2Solar: number
+): number {
+  const periapsis = aTotalAU * (1 - e);
+  return periapsis * Math.cbrt(m1Solar / (3 * (m1Solar + m2Solar)));
+}
+```
+
+This is the physical basis for the S-type limit. `starHillSphereAU()` multiplied by `~0.33` matches `sTypeCriticalAU()` for circular binaries.
+
+### 38.2 Inter-stellar travel delta-V budget
+
+An inter-stellar journey (Star A planet → Star B planet) has these delta-V components:
+
+```
+Total ΔV = escapeStarASOI + interstellarTransit + captureStarBSOI + captureDestination
+```
+
+Where:
+- `escapeStarASOI` = escape velocity at origin planet + cost to climb out of Star A's gravitational well to the edge of Star A's Hill sphere (same escape velocity formula, but with Star A's mass and distance)
+- `interstellarTransit` = transit velocity through binary space (function of separation at departure; solved by brachistochrone or Hohmann from Star A Hill sphere boundary to Star B Hill sphere boundary)
+- `captureStarBSOI` = deceleration cost to enter Star B's Hill sphere and fall toward destination
+- `captureDestination` = existing capture cost at destination body
+
+**Simplification for v1:** Use the brachistochrone model for the inter-stellar leg; the separation at departure (current positions of both stars on their elliptical orbits) determines the distance. Leave Hohmann inter-stellar for v2 (§38.4).
+
+### 38.3 Launch windows between stars
+
+The two stars' varying separation creates launch windows. The optimal window is when the stars are closest (periapsis passage) — minimum inter-stellar transit ΔV and time.
+
+Extend `findNextWindowDayOffset()` in `travelPhysics.ts` to handle the case where origin and destination are around **different stars**: search for minimum separation between the two stars (periapsis passage) rather than minimum planet-to-planet distance.
+
+```typescript
+// In findNextWindowDayOffset(), add case:
+if (originStar !== destinationStar) {
+  // Search for binary periapsis passage within one binary period
+  // Use binaryOrbit.orbitPositionAU() to compute star separation at each day
+  // Return day of minimum stellar separation
+}
+```
+
+### 38.4 Travel planner UI extension
+
+The existing Travel Planner `<select>` for origin/destination already lists all `SceneBody` items. In binary mode, companion-star planets are included automatically — they have `SceneBody` entries like any other planet.
+
+The planner panel gains one new display line (binary mode only):
+
+```
+Inter-stellar leg: [distance at departure AU] → [Star B] Hill sphere
+ΔV for stellar escape: [X km/s]   Capture at [Star B]: [Y km/s]
+```
+
+Existing panel layout unchanged; this line appended below the existing breakdown.
+
+### 38.5 Change surface (travel physics)
+
+| File | Change |
+|------|--------|
+| `src/travelPhysics.ts` | Add `starHillSphereAU()`; extend `findNextWindowDayOffset()` for binary case; extend `buildTravelPlan()` to detect inter-stellar trips and use extended delta-V model |
+| `src/binaryOrbit.ts` | Used for star position queries during window search |
+| `src/travelPlanner.ts` | Add inter-stellar breakdown line to panel (binary mode only) |
+| All other files | **Untouched** |
+
+---
+
+## §39 — Multi-Star Map Page: Routing and UI
+
+**Status:** Planned  
+**Files:** `src/main.ts` (mode detection), `src/renderer.ts` (mode flag), `src/dataAdapter.ts` (extend)
+
+### 39.1 Mode detection
+
+Auto-detect binary mode when loading a payload:
+
+```typescript
+// In loadSystemIntoState(), after buildSceneGraph():
+const hasBinary = (payload.starSystem.companionStars?.length ?? 0) > 0;
+state.isBinaryMode = hasBinary;
+if (hasBinary) {
+  state.binaryConfig = buildBinaryConfig(payload.starSystem);  // from binaryOrbit.ts
+}
+```
+
+No URL param required. Single-star systems load identically to today.
+
+### 39.2 UI differences in binary mode
+
+| Element | Single-star | Binary mode |
+|---------|------------|-------------|
+| Canvas anchor | Primary star centre | Barycenter centre |
+| Star orbit paths | None (star is static) | Elliptical path for each star |
+| Orbit rings (planets) | Circular, log-scaled | Circular, log-scaled; anchor moves with host star |
+| Stability zone overlay | Habitable zone only | Habitable zone + S-type/P-type rings |
+| Tooltip: companion star | Spectral class, mass | + `e=X.XX`, `T=YYY yr`, `a=Z.ZZ AU` |
+| Tooltip: planet (binary) | Existing | + stability classification |
+| Travel Planner | Existing | + inter-stellar leg breakdown |
+| Controls panel | Existing | Existing (no new controls) |
+
+### 39.3 Barycenter marker
+
+A small crosshair (6px, `#ffffff66`) at canvas centre when in binary mode. Not interactive; purely visual reference. Hidden if `state.showZones` is off.
+
+### 39.4 Companion star page title
+
+When saving a page (`savePage()`, `saveInteractivePage()`), the filename includes the companion spectral class:
+
+```
+mneme-map-g2+k5-AbCdEfGh.html
+```
+
+Pattern: `primaryClass + companionClass + seed`.
+
+### 39.5 Additive type additions (2D Map)
+
+```typescript
+// Append to src/types.ts
+export interface BinarySystemState {
+  config: BinaryConfig;           // from binaryOrbit.ts
+  primaryStarId: string;
+  companionStarIds: string[];
+  sTypeLimit_primary_AU: number;
+  sTypeLimit_companion_AU: number;
+  pTypeLimitAU: number;
+}
+
+// Append to AppState
+isBinaryMode: boolean;
+binaryState?: BinarySystemState;
+```
+
+---
+
+## §40 — QA: Multi-Star System Map
+
+**Status:** Planned
+
+### 40.1 Unit tests (`src/binaryOrbit.test.ts`)
+
+- [ ] `solveKepler(M=0, e=0)` → `E=0`.
+- [ ] `solveKepler(M=π, e=0)` → `E=π`.
+- [ ] `solveKepler(M=1.0, e=0.52)` converges in ≤10 iterations; result satisfies `|M − (E − e·sin(E))| < 1e-8`.
+- [ ] `orbitPositionAU()` at `dayOffset=0` matches `meanAnomalyAtEpoch` starting position.
+- [ ] `orbitPositionAU()` at `dayOffset = periodDays` returns same position as `dayOffset=0` (full orbit).
+- [ ] `barycentricAxes()` satisfies `a1 + a2 = semiMajorAU` exactly.
+- [ ] `sTypeCriticalAU()` for Alpha Centauri (a=23.4 AU, e=0.52, μ≈0.46) returns ~3 AU (± 0.5 AU).
+- [ ] `pTypeCriticalAU()` for equal-mass circular binary returns `> 2 × semiMajorAU`.
+- [ ] `starHillSphereAU()` at e=0 (circular) matches `hillSphereAU()` within 1%.
+
+### 40.2 Rendering acceptance
+
+- [ ] Generating a system with companion star activates binary mode automatically.
+- [ ] Both stars animate on elliptical paths; neither is stationary at canvas centre.
+- [ ] Planets around each star follow their host star's screen position.
+- [ ] Planet orbit rings do not detach from host star during animation at any zoom.
+- [ ] Stability zone rings resize correctly on zoom.
+- [ ] SOI selection rings (§26) still appear correctly around planets in binary mode.
+- [ ] Zoom to fit includes outermost body of both star systems.
+
+### 40.3 Travel planner acceptance
+
+- [ ] Selecting origin and destination around the **same star**: result identical to single-star mode.
+- [ ] Selecting origin around **Star A**, destination around **Star B**: inter-stellar breakdown appears.
+- [ ] Inter-stellar ΔV increases as binary separation at departure increases.
+- [ ] Launch window finder returns periapsis passage for binary star trips.
+- [ ] `isPossible = false` with correct `failureReason` when ΔV budget too low to escape Star A.
+
+### 40.4 Regression
+
+- [ ] Loading a single-star system: `isBinaryMode = false`, rendering identical to pre-§33 build.
+- [ ] No console errors in single-star mode after binary code is merged.
+- [ ] Existing §29 QA items (QA-TP-01 through QA-TP-10) still pass in single-star mode.
+
+---
+
 *End of FRD-060.*

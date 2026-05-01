@@ -254,6 +254,14 @@ function computeBodyFrames(
     });
   }
 
+  // Build sorted list of L1 orbit radii (px) for gap calculation
+  const l1Entries: { id: string; distPx: number }[] = [];
+  for (const [id, frame] of frames) {
+    const body = bodies.find(b => b.id === id);
+    if (body && !body.parentId) l1Entries.push({ id, distPx: frame.distPx });
+  }
+  l1Entries.sort((a, b) => a.distPx - b.distPx);
+
   // Second pass: moons (need parent position)
   for (const body of bodies) {
     if (!body.parentId) continue;
@@ -263,9 +271,24 @@ function computeBodyFrames(
     const angle = body.angle + (period > 0 ? (2 * Math.PI * simDayOffset) / period : 0);
     // Scale moon orbit so it's visible but never exceeds a fraction of the parent's orbit.
     // Coefficient 200 (was 3000) prevents moons from appearing to orbit the star at high zoom.
+    // 200 = empirical visual scale factor (AU→visible px, not a unit conversion;
+    // L1 bodies use logScaleDistance which compresses inner-system orbits).
     const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * zoom : 0;
-    const maxMoonDist = parentFrame.distPx * 0.25;
-    const moonDistPx = Math.max(6, Math.min(maxMoonDist, rawMoonDist));
+
+    // Cap moon display orbit within the pixel gap to nearest L1 neighbours
+    const parentIdx = l1Entries.findIndex(e => e.id === body.parentId);
+    let gapPx = parentFrame.distPx * 0.5; // fallback: half parent orbit
+    if (parentIdx >= 0) {
+      const innerGap = parentIdx > 0
+        ? parentFrame.distPx - l1Entries[parentIdx - 1].distPx
+        : parentFrame.distPx;
+      const outerGap = parentIdx < l1Entries.length - 1
+        ? l1Entries[parentIdx + 1].distPx - parentFrame.distPx
+        : parentFrame.distPx;
+      gapPx = Math.min(innerGap, outerGap);
+    }
+    const maxMoonDist = Math.min(parentFrame.distPx * 0.25, gapPx * 0.38);
+    const moonDistPx = Math.max(4, Math.min(maxMoonDist, rawMoonDist));
     frames.set(body.id, {
       x: parentFrame.x + Math.cos(angle) * moonDistPx,
       y: parentFrame.y + Math.sin(angle) * moonDistPx,
@@ -307,9 +330,21 @@ function drawTravelPlannerOverlays(
     const parentPos = screenPosAtTime(parent.id, dayOffset);
     if (!parentPos) return null;
     const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
-    const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0;
-    const maxMoonDist = logScaleDistance(parent.distanceAU, 80) * camera.zoom * 0.25;
-    const moonDistPx = Math.max(6, Math.min(maxMoonDist, rawMoonDist));
+    const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0; // 200 = visual scale factor
+    const parentDistPx = logScaleDistance(parent.distanceAU, 80) * camera.zoom;
+    const l1DistsSorted = bodies
+      .filter(b => !b.parentId && b.distanceAU > 0)
+      .map(b => logScaleDistance(b.distanceAU, 80) * camera.zoom)
+      .sort((a, b) => a - b);
+    const parentLIdx = l1DistsSorted.findIndex(d => Math.abs(d - parentDistPx) < 0.5);
+    let gapPx = parentDistPx * 0.5;
+    if (parentLIdx >= 0) {
+      const innerG = parentLIdx > 0 ? parentDistPx - l1DistsSorted[parentLIdx - 1] : parentDistPx;
+      const outerG = parentLIdx < l1DistsSorted.length - 1 ? l1DistsSorted[parentLIdx + 1] - parentDistPx : parentDistPx;
+      gapPx = Math.min(innerG, outerG);
+    }
+    const maxMoonDist = Math.min(parentDistPx * 0.25, gapPx * 0.38);
+    const moonDistPx = Math.max(4, Math.min(maxMoonDist, rawMoonDist));
     return { x: parentPos.x + Math.cos(angle) * moonDistPx, y: parentPos.y + Math.sin(angle) * moonDistPx };
   }
 
