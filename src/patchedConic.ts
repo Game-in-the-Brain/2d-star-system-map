@@ -171,6 +171,55 @@ export function patchedConicTransfer(
 }
 
 /**
+ * Solve a single Lambert leg between two bodies.
+ * Returns heliocentric velocities at departure and arrival, plus TOF.
+ */
+export function solveLambertLeg(
+  origin: SceneBody,
+  destination: SceneBody,
+  starMassSolar: number,
+  departureDayOffset: number = 0,
+  timeOfFlightDays?: number
+): {
+  v1Kms: { x: number; y: number };
+  v2Kms: { x: number; y: number };
+  timeOfFlightDays: number;
+} | null {
+  const starMuAU3s2 = SOLAR_MU_AU3S2 * starMassSolar;
+
+  const originAngle = origin.angle + (origin.periodDays && origin.periodDays > 0
+    ? (2 * Math.PI * departureDayOffset) / origin.periodDays
+    : 0);
+  const destAngle = destination.angle + (destination.periodDays && destination.periodDays > 0
+    ? (2 * Math.PI * departureDayOffset) / destination.periodDays
+    : 0);
+
+  const r1 = {
+    x: origin.distanceAU * Math.cos(originAngle),
+    y: origin.distanceAU * Math.sin(originAngle),
+  };
+  const r2 = {
+    x: destination.distanceAU * Math.cos(destAngle),
+    y: destination.distanceAU * Math.sin(destAngle),
+  };
+
+  let tofDays = timeOfFlightDays;
+  if (!tofDays) {
+    const aTransfer = (origin.distanceAU + destination.distanceAU) / 2;
+    tofDays = (Math.PI * Math.sqrt(Math.pow(aTransfer, 3) / starMuAU3s2)) / DAY_TO_S;
+  }
+
+  const lambert = solveLambert(r1, r2, tofDays * DAY_TO_S, starMuAU3s2, true);
+  if (!lambert) return null;
+
+  return {
+    v1Kms: { x: lambert.v1.x * AU_TO_KM, y: lambert.v1.y * AU_TO_KM },
+    v2Kms: { x: lambert.v2.x * AU_TO_KM, y: lambert.v2.y * AU_TO_KM },
+    timeOfFlightDays: tofDays,
+  };
+}
+
+/**
  * Compute a gravity assist at an intermediate body.
  *
  * Chains: departure → Lambert to assist → flyby → Lambert to destination

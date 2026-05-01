@@ -12,7 +12,7 @@
 import type { SceneBody, TravelBody, GravityAssist, MultiLegPlan, TransferLeg } from './types';
 import { bodyPositionAt, toTravelBody, distanceAU, calculateTravel } from './travelCalc';
 import { hillSphereAU } from './travelPhysics';
-import { patchedConicTransfer, gravityAssistTransfer } from './patchedConic';
+import { patchedConicTransfer, gravityAssistTransfer, solveLambertLeg, departureHyperbolaDeltaV, arrivalHyperbolaDeltaV } from './patchedConic';
 
 // ─── Physical Constants ───
 const G = 6.674e-11; // m³ kg⁻¹ s⁻²
@@ -245,8 +245,9 @@ function findTwoLegChains(
     if (body1.distanceAU <= Math.min(origin.distanceAU, destination.distanceAU) ||
         body1.distanceAU >= Math.max(origin.distanceAU, destination.distanceAU)) continue;
 
-    const transfer1 = gravityAssistTransfer(origin, body1, destination, starMassSolar, departureDayOffset);
-    if (!transfer1) continue;
+    // Leg 1: origin → body1
+    const leg1 = solveLambertLeg(origin, body1, starMassSolar, departureDayOffset);
+    if (!leg1) continue;
 
     for (let j = 0; j < candidates.length; j++) {
       if (i === j) continue;
@@ -256,30 +257,69 @@ function findTwoLegChains(
       const maxDist = Math.max(body1.distanceAU, destination.distanceAU);
       if (body2.distanceAU <= minDist || body2.distanceAU >= maxDist) continue;
 
-      const midTime = departureDayOffset + transfer1.totalTimeDays * 0.5;
-      const transfer2 = gravityAssistTransfer(body1, body2, destination, starMassSolar, midTime);
-      if (!transfer2) continue;
+      // At body1: check if flyby can redirect from leg1 arrival to leg2 departure
+      const body1Vel = bodyHeliocentricVelocityKms(body1, starMassSolar);
+      const vInfIn1 = calculateVInfinity(leg1.v2Kms, body1Vel);
 
-      const transfer3 = patchedConicTransfer(body2, destination, starMassSolar, midTime + transfer2.totalTimeDays * 0.5);
-      if (!transfer3) continue;
+      // Leg 2: body1 → body2
+      const leg2Departure = departureDayOffset + leg1.timeOfFlightDays;
+      const leg2 = solveLambertLeg(body1, body2, starMassSolar, leg2Departure);
+      if (!leg2) continue;
 
-      const totalDeltaV = transfer1.totalDeltaVKms + transfer2.totalDeltaVKms + transfer3.totalDeltaVKms;
-      const totalTime = transfer1.totalTimeDays + transfer2.totalTimeDays + transfer3.timeOfFlightDays;
+      const vInfOut1 = calculateVInfinity(leg2.v1Kms, body1Vel);
+      const requiredTurn1 = Math.acos(Math.max(-1, Math.min(1,
+        (vInfIn1.direction.x * vInfOut1.direction.x + vInfIn1.direction.y * vInfOut1.direction.y)
+      )));
 
-      const benefitRatio = directDeltaV > 0 ? (directDeltaV - totalDeltaV) / directDeltaV : 0;
-      if (benefitRatio <= 0.1) continue;
+      const body1Mu = bodyMuKm3s2(body1.mass);
+      const body1RadiusKm = estimateBodyRadiusKm(body1.mass, body1.type);
+      const maxTurn1 = calculateTurningAngle(body1RadiusKm + 500, vInfIn1.magnitude, body1Mu);
+      if (requiredTurn1 > maxTurn1) continue;
+
+      // At body2: check if flyby can redirect from leg2 arrival to leg3 departure
+      const body2Vel = bodyHeliocentricVelocityKms(body2, starMassSolar);
+      const vInfIn2 = calculateVInfinity(leg2.v2Kms, body2Vel);
+
+      // Leg 3: body2 → destination
+      const leg3Departure = leg2Departure + leg2.timeOfFlightDays;
+      const leg3 = solveLambertLeg(body2, destination, starMassSolar, leg3Departure);
+      if (!leg3) continue;
+
+      const vInfOut2 = calculateVInfinity(leg3.v1Kms, body2Vel);
+      const requiredTurn2 = Math.acos(Math.max(-1, Math.min(1,
+        (vInfIn2.direction.x * vInfOut2.direction.x + vInfIn2.direction.y * vInfOut2.direction.y)
+      )));
+
+      const body2Mu = bodyMuKm3s2(body2.mass);
+      const body2RadiusKm = estimateBodyRadiusKm(body2.mass, body2.type);
+      const maxTurn2 = calculateTurningAngle(body2RadiusKm + 500, vInfIn2.magnitude, body2Mu);
+      if (requiredTurn2 > maxTurn2) continue;
+
+      // Total propulsive delta-V: departure from origin + arrival at destination
+      const originVel = bodyHeliocentricVelocityKms(origin, starMassSolar);
+      const destVel = bodyHeliocentricVelocityKms(destination, starMassSolar);
+      const originMu = bodyMuKm3s2(origin.mass);
+      const destMu = bodyMuKm3s2(destination.mass);
+
+      const departureDV = departureHyperbolaDeltaV(leg1.v1Kms, originVel, originMu);
+      const arrivalDV = arrivalHyperbolaDeltaV(leg3.v2Kms, destVel, destMu);
+      const totalDV = departureDV + arrivalDV;
+      const totalTime = leg1.timeOfFlightDays + leg2.timeOfFlightDays + leg3.timeOfFlightDays;
+
+      const benefitRatio = directDeltaV > 0 ? (directDeltaV - totalDV) / directDeltaV : 0;
+      if (benefitRatio <= 0.05) continue;
 
       chainAssists.push({
         bodyId: `${body1.id}+${body2.id}`,
         bodyLabel: `${body1.label} → ${body2.label}`,
-        flybyDayOffset: midTime,
+        flybyDayOffset: leg2Departure,
         flybyAltitudeKm: 500,
-        vInfinityKms: transfer1.assistDeltaVKms + transfer2.assistDeltaVKms,
-        turningAngleDeg: transfer1.flybyTurningAngleDeg + transfer2.flybyTurningAngleDeg,
-        deltaVKms: Math.abs(directDeltaV - totalDeltaV),
+        vInfinityKms: vInfIn1.magnitude + vInfIn2.magnitude,
+        turningAngleDeg: (requiredTurn1 + requiredTurn2) * 180 / Math.PI,
+        deltaVKms: Math.abs(directDeltaV - totalDV),
         isAccelerating: destination.distanceAU > origin.distanceAU,
         isValid: true,
-        warning: `2-leg chain, total ${totalTime.toFixed(0)}d`,
+        warning: `2-leg chain, total ${totalTime.toFixed(0)}d, propulsive ΔV ${totalDV.toFixed(2)} km/s`,
       });
     }
   }
