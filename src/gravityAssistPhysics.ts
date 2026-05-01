@@ -12,6 +12,7 @@
 import type { SceneBody, TravelBody, GravityAssist, MultiLegPlan, TransferLeg } from './types';
 import { bodyPositionAt, toTravelBody, distanceAU, calculateTravel } from './travelCalc';
 import { hillSphereAU } from './travelPhysics';
+import { patchedConicTransfer, gravityAssistTransfer } from './patchedConic';
 
 // ─── Physical Constants ───
 const G = 6.674e-11; // m³ kg⁻¹ s⁻²
@@ -142,10 +143,10 @@ export function bodyHeliocentricVelocityKms(
 /**
  * Search for viable gravity assist opportunities between origin and destination.
  *
- * A body is "viable" if:
- * 1. It lies reasonably close to the transfer chord
- * 2. A flyby at safe altitude provides meaningful ΔV change
- * 3. The assist reduces total mission ΔV compared to direct transfer
+ * Uses real patched conic physics:
+ * 1. Compute direct transfer (origin → destination) delta-V
+ * 2. For each candidate body, compute gravity assist transfer (origin → body → destination)
+ * 3. Compare total delta-V: if assist route is cheaper, it's viable
  */
 export function findAssistOpportunities(
   origin: SceneBody,
@@ -155,92 +156,54 @@ export function findAssistOpportunities(
   departureDayOffset: number = 0
 ): GravityAssist[] {
   const assists: GravityAssist[] = [];
-  const starMassEM = starMassSolar * SOLAR_TO_EM;
 
-  // Get origin and destination positions at departure
-  const oPos = bodyPositionAt(toTravelBody(origin, starMassSolar), departureDayOffset, origin.periodDays ?? 365);
-  const dPos = bodyPositionAt(toTravelBody(destination, starMassSolar), departureDayOffset, destination.periodDays ?? 365);
+  // Compute direct transfer as baseline
+  const directTransfer = patchedConicTransfer(origin, destination, starMassSolar, departureDayOffset);
+  const directDeltaV = directTransfer?.totalDeltaVKms ?? Infinity;
 
   for (const body of allBodies) {
     if (body.id === origin.id || body.id === destination.id) continue;
     if (body.type.startsWith('star')) continue;
     if (body.mass <= 0) continue;
 
-    const bPos = bodyPositionAt(toTravelBody(body, starMassSolar), departureDayOffset, body.periodDays ?? 365);
+    // Must be between origin and destination in orbital distance
+    const isBetween = (body.distanceAU > Math.min(origin.distanceAU, destination.distanceAU)) &&
+                      (body.distanceAU < Math.max(origin.distanceAU, destination.distanceAU));
+    if (!isBetween) continue;
 
-    // Check if body is near the chord
-    const chordDx = dPos.x - oPos.x;
-    const chordDy = dPos.y - oPos.y;
-    const chordLen = Math.hypot(chordDx, chordDy);
-    if (chordLen < 0.01) continue;
+    // Compute gravity assist transfer
+    const assistTransfer = gravityAssistTransfer(
+      origin, body, destination, starMassSolar, departureDayOffset
+    );
+    if (!assistTransfer) continue;
 
-    // Project body onto chord
-    const t = ((bPos.x - oPos.x) * chordDx + (bPos.y - oPos.y) * chordDy) / (chordLen * chordLen);
-    if (t <= 0.15 || t >= 0.85) continue;
+    // Only include if the assist provides meaningful benefit
+    // (either reduces total delta-V or provides significant velocity change)
+    const benefitRatio = directDeltaV > 0 ? (directDeltaV - assistTransfer.totalDeltaVKms) / directDeltaV : 0;
 
-    const projX = oPos.x + chordDx * t;
-    const projY = oPos.y + chordDy * t;
-    const distToChordAU = Math.hypot(bPos.x - projX, bPos.y - projY);
+    // Accept if:
+    // 1. Total delta-V is less than direct, OR
+    // 2. Assist provides > 2 km/s velocity change (useful even if total is higher due to extra leg)
+    const isUseful = benefitRatio > 0.05 || assistTransfer.assistDeltaVKms > 2.0;
+    if (!isUseful) continue;
 
-    // Must be within 20% of chord length
-    if (distToChordAU > chordLen * 0.2) continue;
-
-    // Calculate body properties
-    const bodyRadiusKm = estimateBodyRadiusKm(body.mass, body.type);
-    const safePeriapsisKm = bodyRadiusKm + 500; // 500 km minimum safe altitude
-    const mu = bodyMuKm3s2(body.mass);
-
-    // Estimate spacecraft velocity at body (approximate: average of origin and dest orbital velocities)
-    const vSpacecraft = circularOrbitalVelocityKms(starMassSolar, origin.distanceAU);
-    const vPlanet = circularOrbitalVelocityKms(starMassSolar, body.distanceAU);
-
-    // Simple V∞ estimate: difference in orbital speeds
-    const vInfMag = Math.abs(vSpacecraft - vPlanet);
-    if (vInfMag < 1) continue; // Too slow for meaningful assist
-
-    // Calculate turning angle at safe periapsis
-    const turningAngleRad = calculateTurningAngle(safePeriapsisKm, vInfMag, mu);
-    const turningAngleDeg = (turningAngleRad * 180) / Math.PI;
-    if (turningAngleDeg < 5) continue; // Too small to be useful
-
-    // Calculate ΔV from assist
-    const vInfIn = {
-      x: vSpacecraft * Math.cos(origin.angle + Math.PI / 2) - vPlanet * Math.cos(body.angle + Math.PI / 2),
-      y: vSpacecraft * Math.sin(origin.angle + Math.PI / 2) - vPlanet * Math.sin(body.angle + Math.PI / 2),
-    };
-
-    const planetVel = bodyHeliocentricVelocityKms(body, starMassSolar);
-
-    // Try trailing side (speed up)
-    const vOutTrailing = calculateAssistDeltaV(vInfIn, planetVel, turningAngleRad, 'trailing');
-    const vInHelio = {
-      x: planetVel.x + vInfIn.x,
-      y: planetVel.y + vInfIn.y,
-    };
-    const deltaVTrailing = Math.hypot(vOutTrailing.x - vInHelio.x, vOutTrailing.y - vInHelio.y);
-
-    // Try leading side (slow down)
-    const vOutLeading = calculateAssistDeltaV(vInfIn, planetVel, turningAngleRad, 'leading');
-    const deltaVLeading = Math.hypot(vOutLeading.x - vInHelio.x, vOutLeading.y - vInHelio.y);
-
-    // Pick the side that gives larger ΔV magnitude
-    const isAccelerating = deltaVTrailing >= deltaVLeading;
-    const deltaVKms = isAccelerating ? deltaVTrailing : deltaVLeading;
-
-    // Minimum useful ΔV threshold: 0.5 km/s
-    if (deltaVKms < 0.5) continue;
+    // Determine if accelerating or decelerating
+    const isAccelerating = assistTransfer.assistDeltaVKms > 0 &&
+      destination.distanceAU > origin.distanceAU; // Simplified: outbound = accelerate
 
     assists.push({
       bodyId: body.id,
       bodyLabel: body.label,
-      flybyDayOffset: departureDayOffset + t * 365, // Rough estimate
-      flybyAltitudeKm: safePeriapsisKm - bodyRadiusKm,
-      vInfinityKms: vInfMag,
-      turningAngleDeg,
-      deltaVKms,
+      flybyDayOffset: departureDayOffset + assistTransfer.totalTimeDays * 0.5,
+      flybyAltitudeKm: 500,
+      vInfinityKms: assistTransfer.assistDeltaVKms,
+      turningAngleDeg: assistTransfer.flybyTurningAngleDeg,
+      deltaVKms: Math.abs(assistTransfer.assistDeltaVKms),
       isAccelerating,
       isValid: true,
-      warning: turningAngleDeg > 60 ? 'High turning angle — check thermal loading' : undefined,
+      warning: assistTransfer.flybyTurningAngleDeg > 60
+        ? 'High turning angle — check thermal loading'
+        : undefined,
     });
   }
 
