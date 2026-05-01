@@ -79,7 +79,8 @@ export function findClearDepartureWindow(
   obstacles: TravelBody[],
   starMassEM: number,
   maxSearchDays = 365,
-  stepDays = 0.5
+  stepDays = 0.5,
+  starMassSolar = 1
 ): { waitDays: number; originPos: { x: number; y: number }; destPos: { x: number; y: number } } | null {
   const steps = Math.ceil(maxSearchDays / stepDays);
 
@@ -87,8 +88,8 @@ export function findClearDepartureWindow(
     const dayOffset = i * stepDays;
 
     // Compute body positions at this departure time
-    const oAngle = origin.angleRad + (2 * Math.PI * dayOffset) / originPeriod(origin);
-    const dAngle = destination.angleRad + (2 * Math.PI * dayOffset) / originPeriod(destination);
+    const oAngle = origin.angleRad + (2 * Math.PI * dayOffset) / originPeriod(origin, starMassSolar);
+    const dAngle = destination.angleRad + (2 * Math.PI * dayOffset) / originPeriod(destination, starMassSolar);
 
     const oPos = { x: Math.cos(oAngle) * origin.distanceAU, y: Math.sin(oAngle) * origin.distanceAU };
     const dPos = { x: Math.cos(dAngle) * destination.distanceAU, y: Math.sin(dAngle) * destination.distanceAU };
@@ -98,7 +99,7 @@ export function findClearDepartureWindow(
       const soiR = soiRadiusAU(obs.distanceAU, obs.massEM, starMassEM);
       if (soiR <= 0) continue;
 
-      const obsAngle = obs.angleRad + (2 * Math.PI * dayOffset) / originPeriod(obs);
+      const obsAngle = obs.angleRad + (2 * Math.PI * dayOffset) / originPeriod(obs, starMassSolar);
       const obsPos = { x: Math.cos(obsAngle) * obs.distanceAU, y: Math.sin(obsAngle) * obs.distanceAU };
 
       const chord = checkLineCircleIntersection(oPos.x, oPos.y, dPos.x, dPos.y, obsPos.x, obsPos.y, soiR);
@@ -117,7 +118,9 @@ export function findClearDepartureWindow(
 }
 
 // Simple period estimator for TravelBody (Kepler's 3rd law, normalized)
-function originPeriod(body: TravelBody): number {
-  // T ∝ a^(3/2), with T=1 year at 1 AU around 1 M☉
-  return Math.pow(body.distanceAU, 1.5) * 365.25;
+function originPeriod(body: TravelBody, starMassSolar: number): number {
+  // T = 365.25 * sqrt(a³ / M☉)  [days]
+  // For M☉ = 1, a = 1 AU → T = 365.25 days
+  if (starMassSolar <= 0) return Math.pow(body.distanceAU, 1.5) * 365.25;
+  return Math.pow(body.distanceAU, 1.5) * 365.25 / Math.sqrt(starMassSolar);
 }

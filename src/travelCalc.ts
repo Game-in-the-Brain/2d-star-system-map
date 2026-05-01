@@ -11,6 +11,7 @@ import { soiRadiusAU, checkLineCircleIntersection, detourAroundCircle, findClear
 const G_MS2 = 9.80665; // 1 G in m/s²
 const AU_TO_M = 1.496e11;
 const DAY_TO_S = 86400;
+const SOLAR_TO_EM = 332946; // 1 solar mass in Earth masses
 
 /**
  * Convert a scene body to a TravelBody.
@@ -74,17 +75,29 @@ export function findSoiIntersections(
   starMassEM: number
 ): SoiHit[] {
   const hits: SoiHit[] = [];
-  const aPos = { x: origin.distanceAU, y: 0 }; // simplified — use actual angles
-  const bPos = { x: destination.distanceAU, y: 0 };
+  // Use actual epoch positions (angleRad) instead of assuming collinear x-axis
+  const aPos = {
+    x: Math.cos(origin.angleRad) * origin.distanceAU,
+    y: Math.sin(origin.angleRad) * origin.distanceAU,
+  };
+  const bPos = {
+    x: Math.cos(destination.angleRad) * destination.distanceAU,
+    y: Math.sin(destination.angleRad) * destination.distanceAU,
+  };
 
   for (const obs of obstacles) {
     const soiR = soiRadiusAU(obs.distanceAU, obs.massEM, starMassEM);
     if (soiR <= 0) continue;
 
+    const obsPos = {
+      x: Math.cos(obs.angleRad) * obs.distanceAU,
+      y: Math.sin(obs.angleRad) * obs.distanceAU,
+    };
+
     const chordLen = checkLineCircleIntersection(
-      origin.distanceAU, 0,
-      destination.distanceAU, 0,
-      obs.distanceAU, 0,
+      aPos.x, aPos.y,
+      bPos.x, bPos.y,
+      obsPos.x, obsPos.y,
       soiR
     );
 
@@ -109,15 +122,23 @@ export function findSoiIntersections(
 export function calculateTravel(input: TravelInput, allBodies: TravelBody[], starMassEM: number): TravelResult {
   const { origin, destination, accelG, routingMode, departureOffsetDays } = input;
 
-  const directDist = distanceAU(
-    { x: origin.distanceAU, y: 0 },
-    { x: destination.distanceAU, y: 0 }
-  );
+  // Use actual epoch positions instead of collinear x-axis assumption
+  const aPos = {
+    x: Math.cos(origin.angleRad) * origin.distanceAU,
+    y: Math.sin(origin.angleRad) * origin.distanceAU,
+  };
+  const bPos = {
+    x: Math.cos(destination.angleRad) * destination.distanceAU,
+    y: Math.sin(destination.angleRad) * destination.distanceAU,
+  };
+  const directDist = distanceAU(aPos, bPos);
 
   let pathDist = directDist;
   let detourAdded = 0;
   let soiHits: SoiHit[] = [];
   let waitAlt: WaitResult | null = null;
+
+  const starMassSolar = starMassEM / SOLAR_TO_EM;
 
   if (routingMode === 'soi-safe') {
     const obstacles = buildObstacles(allBodies, origin.id, destination.id, starMassEM);
@@ -127,7 +148,7 @@ export function calculateTravel(input: TravelInput, allBodies: TravelBody[], sta
     pathDist = directDist + detourAdded;
 
     // Wait alternative
-    const clearWindow = findClearDepartureWindow(origin, destination, obstacles, starMassEM, 365, 0.5);
+    const clearWindow = findClearDepartureWindow(origin, destination, obstacles, starMassEM, 365, 0.5, starMassSolar);
     if (clearWindow) {
       const waitDist = distanceAU(
         { x: clearWindow.originPos.x, y: clearWindow.originPos.y },
