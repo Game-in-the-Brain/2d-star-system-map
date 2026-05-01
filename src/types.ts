@@ -29,27 +29,32 @@ export interface StarSystem {
     id?: string;
     distanceAU: number;
     mass: number;
+    label?: string;
   }>;
   dwarfPlanets?: Array<{
     id?: string;
     distanceAU: number;
     mass: number;
+    label?: string;
   }>;
   terrestrialWorlds?: Array<{
     id?: string;
     distanceAU: number;
     mass: number;
+    label?: string;
   }>;
   iceWorlds?: Array<{
     id?: string;
     distanceAU: number;
     mass: number;
+    label?: string;
   }>;
   gasWorlds?: Array<{
     id?: string;
     distanceAU: number;
     mass: number;
     gasClass: number | string;
+    label?: string;
   }>;
   moons?: Array<{
     id?: string;
@@ -58,6 +63,7 @@ export interface StarSystem {
     moonOrbitAU: number;
     parentId: string;
     type?: string;
+    label?: string;
   }>;
   rings?: Array<{
     id?: string;

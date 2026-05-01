@@ -154,7 +154,7 @@
               <label for="travel-delta-v">ΔV Budget (km/s)</label>
               <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
 
-              <label for="travel-accel">Acceleration (G)</label>
+              <label for="travel-accel" title="Constant acceleration for brachistochrone (straight-line) trajectory. Higher G = faster trip but ignores orbital mechanics.">Acceleration (G) <span style="opacity:0.5;cursor:help">ⓘ</span></label>
               <input id="travel-accel" type="number" step="0.01" min="0.01" value="0.1" />
 
               <label for="travel-deadline">Max Transit (days)</label>
@@ -211,6 +211,10 @@
               <div class="travel-result-row">
                 <span class="travel-result-label">HRS Traversal:</span>
                 <span id="res-hrs-cost" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Minimum Required:</span>
+                <span id="res-min-dv" class="travel-result-value">—</span>
               </div>
               <div class="travel-result-row">
                 <span class="travel-result-label">Excess ΔV:</span>
@@ -278,6 +282,10 @@
               <div id="res-pessimistic" style="display:none;"></div>
 
               <div id="res-failure-reason" class="travel-result-row" style="display:none; margin-top:4px; color:#ef4444; font-size:11px; line-height:1.4;"></div>
+
+              <!-- Export calculation for debugging -->
+              <div class="travel-result-row divider"></div>
+              <button id="btn-export-calc" class="btn small" style="width: 100%; margin-top: 4px; font-size: 11px;">📋 Export Calculation</button>
             </div>
 
             <!-- Distance context (live updates) -->

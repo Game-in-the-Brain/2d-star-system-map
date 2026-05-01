@@ -201,6 +201,7 @@ export function initTravelPlanner(state: AppState): void {
   const resEscapeOrigin = document.getElementById('res-escape-origin');
   const resCaptureDest = document.getElementById('res-capture-dest');
   const resHrsCost = document.getElementById('res-hrs-cost');
+  const resMinDv = document.getElementById('res-min-dv');
   const resExcessDv = document.getElementById('res-excess-dv');
   const resFlightTime = document.getElementById('res-flight-time');
   const resDistance = document.getElementById('res-distance');
@@ -212,6 +213,7 @@ export function initTravelPlanner(state: AppState): void {
   const resSoiDetours = document.getElementById('res-soi-detours');
   const travelWaitSection = document.getElementById('travel-wait-section');
   const resWaitTotal = document.getElementById('res-wait-total');
+  const btnExportCalc = document.getElementById('btn-export-calc') as HTMLButtonElement | null;
 
   // FRD-064: Deadline
   const travelDeadlineSection = document.getElementById('travel-deadline-section');
@@ -285,6 +287,10 @@ export function initTravelPlanner(state: AppState): void {
         resHrsCost.style.display = 'none';
         (resHrsCost.previousElementSibling as HTMLElement | null)!.style.display = 'none';
       }
+    }
+
+    if (resMinDv) {
+      resMinDv.textContent = `${plan.totalCostKms?.toFixed(2) ?? '—'} km/s`;
     }
 
     if (resExcessDv) {
@@ -502,6 +508,62 @@ export function initTravelPlanner(state: AppState): void {
 
   if (btnClear) {
     btnClear.addEventListener('click', clearSelection);
+  }
+
+  // Export calculation for debugging
+  if (btnExportCalc) {
+    btnExportCalc.addEventListener('click', () => {
+      if (!tp.lastPlan) return;
+      const origin = state.bodies.find(b => b.id === tp.originId);
+      const dest = state.bodies.find(b => b.id === tp.destinationId);
+      const lines = [
+        '=== TRAVEL CALCULATION EXPORT ===',
+        `System: ${state.bodies.find(b => b.type === 'star-primary')?.label || 'Unknown'}`,
+        `Origin: ${origin?.label || '?'} (${origin?.type || '?'}) @ ${origin?.distanceAU.toFixed(3) || '?'} AU`,
+        `Destination: ${dest?.label || '?'} (${dest?.type || '?'}) @ ${dest?.distanceAU.toFixed(3) || '?'} AU`,
+        '',
+        '--- Delta-V Budget ---',
+        `Budget: ${tp.deltaVBudget} km/s`,
+        `Escape Origin: ${tp.lastPlan.escapeOriginKms.toFixed(2)} km/s`,
+        `Capture Destination: ${tp.lastPlan.captureDestKms.toFixed(2)} km/s`,
+        `HRS/SOI Traversal: ${tp.lastPlan.hrsCostKms?.toFixed(2) || '0'} km/s`,
+        `Minimum Required: ${tp.lastPlan.totalCostKms?.toFixed(2) || '?'} km/s`,
+        `Excess: ${tp.lastPlan.excessDeltaVKms.toFixed(2)} km/s`,
+        '',
+        '--- Timing ---',
+        `Departure Offset: ${tp.lastPlan.departureDayOffset} days`,
+        `Optimistic Arrival: ${tp.lastPlan.optimisticArrivalDays.toFixed(0)} days`,
+        `Pessimistic Arrival: ${tp.lastPlan.pessimisticArrivalDays.toFixed(0)} days`,
+        `Synodic Period: ${tp.lastPlan.synodicPeriodDays.toFixed(0)} days`,
+        '',
+        '--- Settings ---',
+        `Routing Mode: ${tp.routingMode}`,
+        `Acceleration: ${tp.accelG} G`,
+        `Gravity Assists: ${tp.useGravityAssists ? 'ON' : 'OFF'}`,
+        `Multi-Leg Chains: ${tp.useMultiLegChains ? 'ON' : 'OFF'}`,
+        `Deadline: ${tp.deadlineDays ? tp.deadlineDays + ' days' : 'None'}`,
+        '',
+        '--- Status ---',
+        `Possible: ${tp.lastPlan.isPossible ? 'YES' : 'NO'}`,
+        tp.lastPlan.failureReason ? `Failure: ${tp.lastPlan.failureReason}` : '',
+        '================================',
+      ].filter(Boolean).join('\n');
+
+      navigator.clipboard.writeText(lines).then(() => {
+        btnExportCalc.textContent = '✅ Copied to clipboard!';
+        setTimeout(() => { btnExportCalc.textContent = '📋 Export Calculation'; }, 2000);
+      }).catch(() => {
+        // Fallback: create a temporary textarea
+        const ta = document.createElement('textarea');
+        ta.value = lines;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btnExportCalc.textContent = '✅ Copied to clipboard!';
+        setTimeout(() => { btnExportCalc.textContent = '📋 Export Calculation'; }, 2000);
+      });
+    });
   }
 
   // Toggle: SOI-safe routing

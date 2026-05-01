@@ -107,7 +107,8 @@ function draw(
 
   // Zone bands (behind orbits)
   if (zones) {
-    drawZoneBands(ctx, zones, originX, originY, camera.zoom, width, height);
+    const maxBodyDistAU = bodies.length > 0 ? Math.max(...bodies.map(b => b.distanceAU)) : 80;
+    drawZoneBands(ctx, zones, originX, originY, camera.zoom, width, height, maxBodyDistAU);
   }
 
   // Pre-compute all body frames
@@ -199,11 +200,12 @@ function updateBodyTooltip(state: AppState): void {
 
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
 
-const ZONE_BANDS: { key: keyof ZoneBoundaries; inner: string; outer: string }[] = [
-  { key: 'infernal', inner: 'rgba(255,60,60,0.18)', outer: 'rgba(255,60,60,0.02)' },
-  { key: 'hot', inner: 'rgba(255,140,40,0.12)', outer: 'rgba(255,140,40,0.02)' },
-  { key: 'conservative', inner: 'rgba(40,220,100,0.10)', outer: 'rgba(40,220,100,0.02)' },
-  { key: 'cold', inner: 'rgba(60,140,255,0.10)', outer: 'rgba(60,140,255,0.02)' },
+const ZONE_BANDS: { key: keyof ZoneBoundaries; inner: string; outer: string; label: string }[] = [
+  { key: 'infernal', inner: 'rgba(255,60,60,0.18)', outer: 'rgba(255,60,60,0.02)', label: 'Infernal' },
+  { key: 'hot', inner: 'rgba(255,140,40,0.12)', outer: 'rgba(255,140,40,0.02)', label: 'Hot' },
+  { key: 'conservative', inner: 'rgba(40,220,100,0.10)', outer: 'rgba(40,220,100,0.02)', label: 'Habitable' },
+  { key: 'cold', inner: 'rgba(60,140,255,0.10)', outer: 'rgba(60,140,255,0.02)', label: 'Cool' },
+  { key: 'outer', inner: 'rgba(140,100,255,0.06)', outer: 'rgba(140,100,255,0.01)', label: 'Outer' },
 ];
 
 function drawZoneBands(
@@ -212,14 +214,17 @@ function drawZoneBands(
   originX: number,
   originY: number,
   zoom: number,
-  width: number,
-  height: number
+  _width: number,
+  _height: number,
+  maxBodyDistAU: number
 ): void {
   for (const band of ZONE_BANDS) {
     const zone = zones[band.key];
-    if (!zone || zone.max == null) continue;
+    if (!zone) continue;
     const innerR = logScaleDistance(Math.max(0, zone.min), 80) * zoom;
-    const outerR = logScaleDistance(zone.max, 80) * zoom;
+    // Outer zone has no max — extend to beyond the outermost planet
+    const outerAU = zone.max ?? maxBodyDistAU * 1.2;
+    const outerR = logScaleDistance(outerAU, 80) * zoom;
     if (outerR <= 0 || innerR >= outerR) continue;
 
     const gradient = ctx.createRadialGradient(originX, originY, innerR, originX, originY, outerR);
@@ -430,74 +435,89 @@ function drawTravelPlannerOverlays(
   const plan = tp.lastPlan;
   const tl = tp.timeline;
 
-  if (plan?.isPossible) {
+  // Draw trajectory whenever we have a plan (possible or not)
+  if (plan) {
     const departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset;
-    const arrivalDay = departureDay + plan.pessimisticArrivalDays;
+    const arrivalDay = plan.pessimisticArrivalDays > 0
+      ? departureDay + plan.pessimisticArrivalDays
+      : departureDay + 365;
 
     const departurePos = screenPosAtTime(tp.originId, departureDay);
     const arrivalPos = screenPosAtTime(tp.destinationId, arrivalDay);
-    if (!departurePos || !arrivalPos) return;
 
-    const progress = plan.pessimisticArrivalDays > 0
-      ? Math.max(0, Math.min(1, tl.travelDayOffset / plan.pessimisticArrivalDays))
-      : 0;
+    if (departurePos && arrivalPos) {
+      const totalDays = arrivalDay - departureDay;
+      const progress = totalDays > 0
+        ? Math.max(0, Math.min(1, tl.travelDayOffset / totalDays))
+        : 0;
 
-    if (tp.useGravityAssists) {
-      // FRD-063: Draw real gravity-assist trajectory from patched-conic physics
-      const maxAssists = tp.useMultiLegChains ? 2 : 1;
-      const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
-      const departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset;
-      const waypoints = generateRealWaypoints(
-        state, tp.originId, tp.destinationId, starMassSolar, departureDay, tp.useMultiLegChains, maxAssists
-      );
-      drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
-    } else {
-      // Standard direct chord
-      const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
-      const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
+      const isPossible = plan.isPossible;
+      const pathColor = isPossible ? '96,165,250' : '239,68,68'; // blue vs red
 
-      ctx.save();
+      if (tp.useGravityAssists && isPossible) {
+        // FRD-063: Draw real gravity-assist trajectory from patched-conic physics
+        const maxAssists = tp.useMultiLegChains ? 2 : 1;
+        const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
+        const waypoints = generateRealWaypoints(
+          state, tp.originId, tp.destinationId, starMassSolar, departureDay, tp.useMultiLegChains, maxAssists
+        );
+        drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
+      } else {
+        // Standard direct chord
+        const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
+        const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
 
-      // Travelled segment (solid blue)
-      ctx.strokeStyle = 'rgba(96,165,250,0.75)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(departurePos.x, departurePos.y);
-      ctx.lineTo(mx, my);
-      ctx.stroke();
+        ctx.save();
 
-      // Remaining segment (dashed blue)
-      ctx.strokeStyle = 'rgba(96,165,250,0.25)';
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(mx, my);
-      ctx.lineTo(arrivalPos.x, arrivalPos.y);
-      ctx.stroke();
+        // Full planned path (faint background)
+        ctx.strokeStyle = `rgba(${pathColor},0.15)`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(departurePos.x, departurePos.y);
+        ctx.lineTo(arrivalPos.x, arrivalPos.y);
+        ctx.stroke();
 
-      // Arrival marker — small cross at the destination's predicted arrival position
-      ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(251,146,60,0.6)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(arrivalPos.x - 5, arrivalPos.y);
-      ctx.lineTo(arrivalPos.x + 5, arrivalPos.y);
-      ctx.moveTo(arrivalPos.x, arrivalPos.y - 5);
-      ctx.lineTo(arrivalPos.x, arrivalPos.y + 5);
-      ctx.stroke();
+        // Travelled segment (solid, brighter)
+        ctx.strokeStyle = `rgba(${pathColor},0.9)`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(departurePos.x, departurePos.y);
+        ctx.lineTo(mx, my);
+        ctx.stroke();
 
-      // Spacecraft chevron at current position along chord
-      const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
-      ctx.fillStyle = 'rgba(251,146,60,0.9)';
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
-      ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
-      ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
-      ctx.closePath();
-      ctx.fill();
+        // Remaining segment (dashed)
+        ctx.strokeStyle = `rgba(${pathColor},0.4)`;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(mx, my);
+        ctx.lineTo(arrivalPos.x, arrivalPos.y);
+        ctx.stroke();
 
-      ctx.restore();
+        // Arrival marker
+        ctx.setLineDash([]);
+        ctx.strokeStyle = isPossible ? 'rgba(251,146,60,0.8)' : 'rgba(239,68,68,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(arrivalPos.x - 6, arrivalPos.y);
+        ctx.lineTo(arrivalPos.x + 6, arrivalPos.y);
+        ctx.moveTo(arrivalPos.x, arrivalPos.y - 6);
+        ctx.lineTo(arrivalPos.x, arrivalPos.y + 6);
+        ctx.stroke();
+
+        // Spacecraft chevron at current position
+        const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
+        ctx.fillStyle = isPossible ? 'rgba(251,146,60,0.95)' : 'rgba(239,68,68,0.95)';
+        ctx.beginPath();
+        ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
+        ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
+        ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
     }
   } else {
     // No plan or impossible: dashed distance line between current positions
@@ -525,13 +545,14 @@ function drawTravelPlannerOverlays(
     ctx.restore();
 
     // Failure reason on canvas
-    if (plan?.failureReason) {
+    const failureReason = tp.lastPlan?.failureReason;
+    if (failureReason) {
       ctx.save();
       ctx.fillStyle = 'rgba(251,146,60,0.85)';
       ctx.font = '10px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(plan.failureReason, midX, midY + 28);
+      ctx.fillText(failureReason, midX, midY + 28);
       ctx.restore();
     }
   }

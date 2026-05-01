@@ -105,7 +105,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(disk.id, {
       id,
       type: 'disk',
-      label: 'Disk',
+      label: disk.label || 'Disk',
       distanceAU: disk.distanceAU,
       mass: disk.mass,
       radiusPx: 5,
@@ -125,7 +125,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(p.id, {
       id,
       type: 'dwarf',
-      label: 'Dwarf',
+      label: p.label || 'Dwarf',
       distanceAU: p.distanceAU,
       mass: p.mass,
       radiusPx: massToRadiusPx(p.mass, 'dwarf'),
@@ -145,7 +145,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(p.id, {
       id,
       type: 'terrestrial',
-      label: 'Terrestrial',
+      label: p.label || 'Terrestrial',
       distanceAU: p.distanceAU,
       mass: p.mass,
       radiusPx: massToRadiusPx(p.mass, 'terrestrial'),
@@ -165,7 +165,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(p.id, {
       id,
       type: 'ice',
-      label: 'Ice',
+      label: p.label || 'Ice',
       distanceAU: p.distanceAU,
       mass: p.mass,
       radiusPx: massToRadiusPx(p.mass, 'ice'),
@@ -194,7 +194,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(p.id, {
       id,
       type,
-      label: `Gas ${gasClassNum === 4 ? 'IV/V' : toRoman(gasClassNum)}`,
+      label: p.label || `Gas ${gasClassNum === 4 ? 'IV/V' : toRoman(gasClassNum)}`,
       distanceAU: p.distanceAU,
       mass: p.mass,
       radiusPx: massToRadiusPx(p.mass, type),
@@ -255,7 +255,7 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
     addBody(moon.id, {
       id,
       type: 'moon',
-      label: 'Moon',
+      label: moon.label || 'Moon',
       distanceAU: parentBody.distanceAU, // orbital distance from star (for reference)
       mass: moon.mass,
       radiusPx: massToRadiusPx(moon.mass, 'moon'),
