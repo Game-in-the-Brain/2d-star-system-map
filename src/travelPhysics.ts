@@ -42,6 +42,25 @@ export function estimateRadiusKm(massEM: number, type: BodyType): number {
 }
 
 /**
+ * Calculate Roche limit in km for a body.
+ *
+ * d = 2.44 * R * (ρ_primary / ρ_satellite)^(1/3)
+ *
+ * Uses assumed densities:
+ *   Gas giant: 1.3 g/cm³
+ *   Satellite: 2.0 g/cm³ (average rocky/icy moon)
+ *
+ * Returns 0 for non-gas-giants (Roche limit is irrelevant for small bodies).
+ */
+export function rocheLimitKm(massEM: number, type: BodyType): number {
+  if (!type.startsWith('gas')) return 0;
+  const bodyRadiusKm = estimateRadiusKm(massEM, type);
+  const gasGiantDensity = 1.3;
+  const moonDensity = 2.0;
+  return 2.44 * bodyRadiusKm * Math.cbrt(gasGiantDensity / moonDensity);
+}
+
+/**
  * Calculate escape velocity in km/s for a body.
  * v_esc = sqrt(2 * G * M / R)
  */

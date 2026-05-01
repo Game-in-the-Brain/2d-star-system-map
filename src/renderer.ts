@@ -1,7 +1,7 @@
 import type { AppState, SceneBody, ZoneBoundaries } from './types';
 import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './starfield';
 import { logScaleDistance, resetCamera } from './camera';
-import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU } from './travelPhysics';
+import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU, rocheLimitKm } from './travelPhysics';
 import { tickTravelTimeline } from './travelPlanner';
 import { drawGravityAssistTrajectory, generateRealWaypoints } from './gravityAssistDraw';
 
@@ -173,12 +173,14 @@ function updateBodyTooltip(state: AppState): void {
   const starMass = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
   const hs = hillSphereAU(body.mass, starMass, body.distanceAU, body.type);
   const esc = calculateEscapeVelocityKms(body.mass, estimateRadiusKm(body.mass, body.type));
+  const roche = body.type.startsWith('gas') ? rocheLimitKm(body.mass, body.type) : 0;
 
   tooltip.innerHTML = `
     <div class="tt-title">${body.label} (${body.type})</div>
     <div class="tt-row"><span class="tt-label">Distance</span><span class="tt-value">${body.distanceAU.toFixed(2)} AU</span></div>
     <div class="tt-row"><span class="tt-label">Mass</span><span class="tt-value">${body.mass.toFixed(2)} M⊕</span></div>
     ${hs > 0 ? `<div class="tt-row"><span class="tt-label">Hill Sphere</span><span class="tt-value">${hs.toExponential(3)} AU</span></div>` : ''}
+    ${roche > 0 ? `<div class="tt-row"><span class="tt-label">Roche Limit</span><span class="tt-value">${(roche / 1.496e8).toExponential(3)} AU</span></div>` : ''}
     ${esc > 0 ? `<div class="tt-row"><span class="tt-label">Esc Vel</span><span class="tt-value">${esc.toFixed(2)} km/s</span></div>` : ''}
   `;
 
@@ -595,6 +597,24 @@ function drawBody(
     ctx.arc(pos.x, pos.y, body.radiusPx, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  }
+
+  // FRD-069: Roche limit for gas giants
+  if (body.type.startsWith('gas')) {
+    const rocheKm = rocheLimitKm(body.mass, body.type);
+    if (rocheKm > 0) {
+      const rocheAU = rocheKm / 1.496e8;
+      const rochePx = logScaleDistance(rocheAU, 80) * zoom;
+      if (rochePx > body.radiusPx * 0.5) {
+        ctx.strokeStyle = 'rgba(255, 60, 60, 0.25)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, rochePx, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
   }
 
   // Label culling: only draw labels for important bodies at very low zoom
