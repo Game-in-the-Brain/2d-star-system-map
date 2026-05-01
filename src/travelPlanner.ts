@@ -311,6 +311,13 @@ export function initTravelPlanner(state: AppState): void {
       resDistance.textContent = `${calcResult.pathDistanceAU.toFixed(2)} AU`;
     }
 
+    // Gravity assist indicator
+    if (tp.useGravityAssists && resFailureReason) {
+      resFailureReason.textContent = '🔬 Gravity assist visualization active (physics placeholder — FRD-063)';
+      resFailureReason.style.display = 'block';
+      resFailureReason.style.color = '#60a5fa';
+    }
+
     // SOI intersections
     if (travelSoiSection && travelSoiList && resSoiDetours) {
       if (calcResult.soiIntersections.length > 0) {
@@ -439,19 +446,13 @@ export function initTravelPlanner(state: AppState): void {
     });
   }
 
-  // Toggle: Gravity assists (placeholder for FRD-063)
+  // Toggle: Gravity assists (FRD-063 — visual placeholder active, physics coming)
   if (gravityAssistCheck) {
     gravityAssistCheck.addEventListener('change', () => {
       tp.useGravityAssists = gravityAssistCheck.checked;
       if (tp.lastPlan) {
-        if (tp.useGravityAssists) {
-          // FRD-063 placeholder
-          alert('Gravity Assists will be available in FRD-063. Toggle off to use standard routing.');
-          gravityAssistCheck.checked = false;
-          tp.useGravityAssists = false;
-        } else {
-          calculateTransfer();
-        }
+        // Re-trigger calculation to update results display
+        calculateTransfer();
       }
     });
   }

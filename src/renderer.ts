@@ -3,6 +3,7 @@ import { generateStarfield, drawStarfield, generateNebula, drawNebula } from './
 import { logScaleDistance, resetCamera } from './camera';
 import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU } from './travelPhysics';
 import { tickTravelTimeline } from './travelPlanner';
+import { drawGravityAssistTrajectory, generatePlaceholderWaypoints } from './gravityAssistDraw';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -428,9 +429,6 @@ function drawTravelPlannerOverlays(
   const tl = tp.timeline;
 
   if (plan?.isPossible) {
-    // Chord endpoints are FIXED in time:
-    //   start = origin's position when the ship departed
-    //   end   = destination's position when the ship is expected to arrive
     const departureDay = tl.pinnedDepartureDayOffset ?? plan.departureDayOffset;
     const arrivalDay = departureDay + plan.pessimisticArrivalDays;
 
@@ -441,51 +439,59 @@ function drawTravelPlannerOverlays(
     const progress = plan.pessimisticArrivalDays > 0
       ? Math.max(0, Math.min(1, tl.travelDayOffset / plan.pessimisticArrivalDays))
       : 0;
-    const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
-    const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
 
-    ctx.save();
+    if (tp.useGravityAssists) {
+      // FRD-063: Draw multi-leg gravity-assist trajectory
+      const waypoints = generatePlaceholderWaypoints(state, tp.originId, tp.destinationId, frames);
+      drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
+    } else {
+      // Standard direct chord
+      const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
+      const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
 
-    // Travelled segment (solid blue)
-    ctx.strokeStyle = 'rgba(96,165,250,0.75)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(departurePos.x, departurePos.y);
-    ctx.lineTo(mx, my);
-    ctx.stroke();
+      ctx.save();
 
-    // Remaining segment (dashed blue)
-    ctx.strokeStyle = 'rgba(96,165,250,0.25)';
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(mx, my);
-    ctx.lineTo(arrivalPos.x, arrivalPos.y);
-    ctx.stroke();
+      // Travelled segment (solid blue)
+      ctx.strokeStyle = 'rgba(96,165,250,0.75)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(departurePos.x, departurePos.y);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
 
-    // Arrival marker — small cross at the destination's predicted arrival position
-    ctx.setLineDash([]);
-    ctx.strokeStyle = 'rgba(251,146,60,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(arrivalPos.x - 5, arrivalPos.y);
-    ctx.lineTo(arrivalPos.x + 5, arrivalPos.y);
-    ctx.moveTo(arrivalPos.x, arrivalPos.y - 5);
-    ctx.lineTo(arrivalPos.x, arrivalPos.y + 5);
-    ctx.stroke();
+      // Remaining segment (dashed blue)
+      ctx.strokeStyle = 'rgba(96,165,250,0.25)';
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(arrivalPos.x, arrivalPos.y);
+      ctx.stroke();
 
-    // Spacecraft chevron at current position along chord
-    const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
-    ctx.fillStyle = 'rgba(251,146,60,0.9)';
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
-    ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
-    ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
-    ctx.closePath();
-    ctx.fill();
+      // Arrival marker — small cross at the destination's predicted arrival position
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(251,146,60,0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(arrivalPos.x - 5, arrivalPos.y);
+      ctx.lineTo(arrivalPos.x + 5, arrivalPos.y);
+      ctx.moveTo(arrivalPos.x, arrivalPos.y - 5);
+      ctx.lineTo(arrivalPos.x, arrivalPos.y + 5);
+      ctx.stroke();
 
-    ctx.restore();
+      // Spacecraft chevron at current position along chord
+      const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
+      ctx.fillStyle = 'rgba(251,146,60,0.9)';
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
+      ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
+      ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
   } else {
     // No plan or impossible: dashed distance line between current positions
     ctx.save();
