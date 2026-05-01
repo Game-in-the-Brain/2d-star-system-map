@@ -349,6 +349,24 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
+
+    // Single-tap detection: if not a long press and finger lifted cleanly
+    const changedTouches = e.changedTouches;
+    if (changedTouches.length === 1 && !isLongPress && e.touches.length === 0) {
+      const pos = getTouchCenter(changedTouches);
+      // Only process as tap if we didn't just handle a double-tap
+      const now = Date.now();
+      if (now - lastTapTime >= 300 || Math.hypot(pos.x - lastTapX, pos.y - lastTapY) >= 30) {
+        if (contextMenuOpen) {
+          hideContextMenu();
+        } else {
+          if (handleTravelPlannerClick(pos.x, pos.y, state)) {
+            refreshTravelPanel(state);
+          }
+        }
+      }
+    }
+
     lastTouches = e.touches;
     if (e.touches.length < 2) {
       lastPinchDistance = 0;

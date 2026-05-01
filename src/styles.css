@@ -540,6 +540,9 @@ select.btn {
   border-radius: 6px;
   transition: background 0.15s ease;
   white-space: nowrap;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
 }
 
 .ctx-item:active,

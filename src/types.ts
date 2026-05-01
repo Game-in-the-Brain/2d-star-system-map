@@ -276,20 +276,4 @@ export interface GravityAssist {
   warning?: string;
 }
 
-export interface TransferLeg {
-  fromBodyId: string;
-  toBodyId: string;
-  departureDayOffset: number;
-  arrivalDayOffset: number;
-  deltaVKms: number;
-  transferType: 'hohmann' | 'lambert' | 'coast';
-  trajectory: { x: number; y: number; day: number }[];
-}
 
-export interface MultiLegPlan {
-  legs: TransferLeg[];
-  assists: GravityAssist[];
-  totalDeltaVKms: number;
-  totalTimeDays: number;
-  directComparison: { deltaVKms: number; timeDays: number };
-}

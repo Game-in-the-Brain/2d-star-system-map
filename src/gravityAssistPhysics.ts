@@ -9,7 +9,7 @@
  * - Multi-leg trajectory construction
  */
 
-import type { SceneBody, TravelBody, GravityAssist, MultiLegPlan, TransferLeg } from './types';
+import type { SceneBody, TravelBody, GravityAssist } from './types';
 import { bodyPositionAt, toTravelBody, distanceAU, calculateTravel } from './travelCalc';
 import { hillSphereAU } from './travelPhysics';
 import { patchedConicTransfer, gravityAssistTransfer, solveLambertLeg, departureHyperbolaDeltaV, arrivalHyperbolaDeltaV } from './patchedConic';
@@ -326,26 +326,6 @@ function findTwoLegChains(
 
   chainAssists.sort((a, b) => b.deltaVKms - a.deltaVKms);
   return chainAssists.slice(0, 2);
-}
-
-/**
- * Build a multi-leg plan using gravity assists.
- *
- * For now, this is a simplified version that chains the best assist
- * between origin and destination. Full implementation will support
- * multi-assist chains (origin → assist1 → assist2 → destination).
- */
-export function buildMultiLegPlan(
-  originId: string,
-  destinationId: string,
-  assistBodyIds: string[],
-  allBodies: SceneBody[],
-  starMassSolar: number,
-  departureDayOffset: number
-): MultiLegPlan | null {
-  // TODO: Full multi-leg implementation with patched conics
-  // For now, return a simplified structure
-  return null;
 }
 
 // ─── Helper Functions ───
