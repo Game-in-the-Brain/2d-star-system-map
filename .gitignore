@@ -8,3 +8,4 @@ tsconfig.tsbuildinfo
 *.deb
 *.apk
 *.aab
+tools/system-importer/output/
