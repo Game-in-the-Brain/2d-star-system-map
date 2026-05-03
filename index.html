@@ -39,6 +39,9 @@
             <button id="btn-generate-system" class="btn small" style="flex: 1; margin-left: 4px;">🎲 Random System</button>
           </div>
           <div class="control-row">
+            <button id="btn-view-mode" class="btn small" style="width: 100%; display: none;">☉ Planetary View</button>
+          </div>
+          <div class="control-row">
             <button id="btn-play" class="btn" aria-label="Play">▶</button>
             <button id="btn-pause" class="btn" aria-label="Pause" style="display:none">⏸</button>
             <button id="btn-reverse" class="btn" aria-label="Reverse">⏮</button>
@@ -221,6 +224,27 @@
                 <span id="res-excess-dv" class="travel-result-value">—</span>
               </div>
 
+              <!-- Patched Conic Baseline -->
+              <div id="travel-patched-conic-section" style="display:none;">
+                <div class="travel-result-row divider"></div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Hohmann ΔV:</span>
+                  <span id="res-hohmann-dv" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row">
+                  <span class="travel-result-label">Hohmann Time:</span>
+                  <span id="res-hohmann-time" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row" id="travel-assist-row" style="display:none;">
+                  <span class="travel-result-label">Assist ΔV:</span>
+                  <span id="res-assist-dv" class="travel-result-value">—</span>
+                </div>
+                <div class="travel-result-row" id="travel-assist-savings-row" style="display:none;">
+                  <span class="travel-result-label">Assist Savings:</span>
+                  <span id="res-assist-savings" class="travel-result-value">—</span>
+                </div>
+              </div>
+
               <!-- Time & distance -->
               <div class="travel-result-row divider"></div>
               <div class="travel-result-row">
@@ -239,14 +263,6 @@
               <!-- Deadline / Fast Transfer (FRD-064) -->
               <div id="travel-deadline-section" style="display:none;">
                 <div class="travel-result-row divider"></div>
-                <div class="travel-result-row">
-                  <span class="travel-result-label">Hohmann ΔV:</span>
-                  <span id="res-hohmann-dv" class="travel-result-value">—</span>
-                </div>
-                <div class="travel-result-row">
-                  <span class="travel-result-label">Hohmann Time:</span>
-                  <span id="res-hohmann-time" class="travel-result-value">—</span>
-                </div>
                 <div class="travel-result-row">
                   <span class="travel-result-label">Deadline ΔV:</span>
                   <span id="res-deadline-dv" class="travel-result-value">—</span>

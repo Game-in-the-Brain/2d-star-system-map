@@ -237,6 +237,8 @@ export function gravityAssistTransfer(
   assistDeltaVKms: number;
   totalDeltaVKms: number;
   totalTimeDays: number;
+  leg1TimeDays: number;
+  leg2TimeDays: number;
   flybyTurningAngleDeg: number;
 } | null {
   const starMuAU3s2 = SOLAR_MU_AU3S2 * starMassSolar;
@@ -265,15 +267,16 @@ export function gravityAssistTransfer(
   if (!lambert1) return null;
 
   // Leg 2: Assist → Destination (depart after flyby)
+  const a2 = (assistBody.distanceAU + destination.distanceAU) / 2;
+  const tof2 = (Math.PI * Math.sqrt(Math.pow(a2, 3) / starMuAU3s2)) / DAY_TO_S;
+  const arrivalDayOffset = departureDayOffset + tof1 + tof2;
   const destAngle = destination.angle + (destination.periodDays && destination.periodDays > 0
-    ? (2 * Math.PI * (departureDayOffset + tof1)) / destination.periodDays
+    ? (2 * Math.PI * arrivalDayOffset) / destination.periodDays
     : 0);
   const r2 = {
     x: destination.distanceAU * Math.cos(destAngle),
     y: destination.distanceAU * Math.sin(destAngle),
   };
-  const a2 = (assistBody.distanceAU + destination.distanceAU) / 2;
-  const tof2 = (Math.PI * Math.sqrt(Math.pow(a2, 3) / starMuAU3s2)) / DAY_TO_S;
   const lambert2 = solveLambert(rAssist, r2, tof2 * DAY_TO_S, starMuAU3s2, true);
   if (!lambert2) return null;
 
@@ -294,19 +297,40 @@ export function gravityAssistTransfer(
   const vInfIn = calculateVInfinity(vArrivalKms, assistPlanetVel);
   const vInfOut = calculateVInfinity(vDepartureKms, assistPlanetVel);
 
-  // Flyby geometry
+  // ── Gravity-assist compatibility checks ──
+  // V∞ magnitude must be preserved (energy conservation)
+  const vInfDiff = Math.abs(vInfIn.magnitude - vInfOut.magnitude);
+  if (vInfIn.magnitude === 0 || vInfOut.magnitude === 0 || vInfDiff / vInfIn.magnitude > 0.05) {
+    return null; // Incompatible V∞ magnitudes — flyby cannot bridge the two legs
+  }
+
+  // Required turn angle: angle between incoming and outgoing V∞ vectors
+  const cosRequiredTurn = Math.max(-1, Math.min(1,
+    vInfIn.direction.x * vInfOut.direction.x + vInfIn.direction.y * vInfOut.direction.y
+  ));
+  const requiredTurnRad = Math.acos(cosRequiredTurn);
+
+  // Maximum turn angle for this flyby geometry
   const assistMu = bodyMuKm3s2(assistBody.mass);
   const assistRadiusKm = estimateBodyRadiusKm(assistBody.mass, assistBody.type);
   const periapsisKm = assistRadiusKm + flybyAltitudeKm;
-  const turningAngleRad = calculateTurningAngle(periapsisKm, vInfIn.magnitude, assistMu);
+  const maxTurnRad = calculateTurningAngle(periapsisKm, vInfIn.magnitude, assistMu);
 
-  // Calculate the delta-V provided by the assist
-  // The assist rotates V∞, changing heliocentric velocity
-  const side: 'leading' | 'trailing' = Math.random() > 0.5 ? 'trailing' : 'leading'; // Simplified
+  if (requiredTurnRad > maxTurnRad) {
+    return null; // Flyby cannot turn enough to match the required departure direction
+  }
+
+  // Determine flyby side from the cross product of V∞ vectors
+  // Positive z → rotate V∞ counter-clockwise → trailing side (gain speed)
+  // Negative z → rotate V∞ clockwise → leading side (lose speed)
+  const crossZ = vInfIn.direction.x * vInfOut.direction.y - vInfIn.direction.y * vInfOut.direction.x;
+  const side: 'leading' | 'trailing' = crossZ >= 0 ? 'trailing' : 'leading';
+
+  // Apply the gravity assist with the REQUIRED turn angle (not the maximum)
   const vAfterAssist = calculateAssistDeltaV(
     { x: vInfIn.direction.x * vInfIn.magnitude, y: vInfIn.direction.y * vInfIn.magnitude },
     assistPlanetVel,
-    turningAngleRad,
+    requiredTurnRad,
     side
   );
 
@@ -333,7 +357,9 @@ export function gravityAssistTransfer(
     assistDeltaVKms: assistDeltaV,
     totalDeltaVKms: leg1DeltaV + leg2DeltaV,
     totalTimeDays: tof1 + tof2,
-    flybyTurningAngleDeg: (turningAngleRad * 180) / Math.PI,
+    leg1TimeDays: tof1,
+    leg2TimeDays: tof2,
+    flybyTurningAngleDeg: (requiredTurnRad * 180) / Math.PI,
   };
 }
 

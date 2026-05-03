@@ -25,6 +25,21 @@ export interface StarSystem {
     mass: number;
     orbitDistance: number;
   }>;
+  /** FRD-067: barycenter view — only present for multi-star systems. */
+  barycenterView?: {
+    stars: Array<{
+      starId: string;
+      isPrimary: boolean;
+      class: string;
+      grade: number;
+      mass: number;
+      distanceAU: number;
+      periodYears: number;
+      eccentricity: number;
+      inclinationDeg: number;
+      angleRad: number;
+    }>;
+  };
   circumstellarDisks?: Array<{
     id?: string;
     distanceAU: number;
@@ -162,6 +177,8 @@ export interface AppState {
   hoveredBodyId: string | null;
   lastMouseX: number;
   lastMouseY: number;
+  /** FRD-067: current map view mode */
+  viewMode: 'planetary' | 'barycenter';
 }
 
 // FRD-046: Saved star page format
@@ -277,9 +294,15 @@ export interface GravityAssist {
   vInfinityKms: number;
   turningAngleDeg: number;
   deltaVKms: number;
+  /** Total delta-V of the full assisted route (leg1 + leg2 departure/arrival burns). */
+  routeDeltaVKms: number;
   isAccelerating: boolean;
   isValid: boolean;
   warning?: string;
+  /** Physics-computed time for origin → assist (days). */
+  leg1TimeDays: number;
+  /** Physics-computed time for assist → destination (days). */
+  leg2TimeDays: number;
 }
 
 

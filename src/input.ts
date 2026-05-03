@@ -78,14 +78,17 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
     const tp = state.travelPlanner;
     const isOrigin = tp?.originId === body.id;
     const isDest = tp?.destinationId === body.id;
+    const isBarycenter = state.viewMode === 'barycenter';
 
     menu.innerHTML = `
+      ${!isBarycenter ? `
       <div class="ctx-item" data-action="origin" data-body-id="${body.id}">
         ${isOrigin ? '✓ ' : ''}🚀 Set as Origin
       </div>
       <div class="ctx-item" data-action="dest" data-body-id="${body.id}">
         ${isDest ? '✓ ' : ''}🎯 Set as Destination
       </div>
+      ` : ''}
       <div class="ctx-item" data-action="details" data-body-id="${body.id}">
         ℹ️ View Details
       </div>
@@ -162,6 +165,9 @@ export function initInputHandlers(state: AppState, onReset: () => void): void {
 
     const tp = state.travelPlanner;
     if (!tp) return;
+
+    // No travel planning in barycenter view
+    if (state.viewMode === 'barycenter') return;
 
     // Switch to Travel tab
     const travelTab = document.querySelector('.tab-btn[data-tab="travel"]') as HTMLElement | null;

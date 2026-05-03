@@ -3,7 +3,7 @@ import type { AppState, MapPayload, StarSystem } from './types';
 import { registerSW } from 'virtual:pwa-register';
 import { initRenderer, resizeCanvas } from './renderer';
 import { initUIControls } from './uiControls';
-import { buildSceneGraph } from './dataAdapter';
+import { buildSceneGraph, buildBarycenterScene } from './dataAdapter';
 import { initInputHandlers } from './input';
 import { resetCamera } from './camera';
 import { generateRandomSystem } from './generator';
@@ -77,6 +77,7 @@ function createDefaultState(): AppState {
     hoveredBodyId: null,
     lastMouseX: 0,
     lastMouseY: 0,
+    viewMode: 'planetary',
   };
 }
 
@@ -97,13 +98,18 @@ function loadSystemIntoState(state: AppState, payload: MapPayload): void {
   );
   state.simDayOffset = 0;
   try {
-    state.bodies = buildSceneGraph(payload.starSystem);
+    if (state.viewMode === 'barycenter' && payload.starSystem.barycenterView) {
+      state.bodies = buildBarycenterScene(payload.starSystem);
+      state.zones = undefined; // no zones in barycenter view
+    } else {
+      state.bodies = buildSceneGraph(payload.starSystem);
+      state.zones = payload.starSystem.zones;
+    }
   } catch (err) {
-    console.error('[main] buildSceneGraph failed:', err);
+    console.error('[main] build scene failed:', err);
     alert('Failed to build scene graph. Check console for details.');
     return;
   }
-  state.zones = payload.starSystem.zones;
 
   // Update seed display
   const seedDisplay = document.getElementById('seed-display') as HTMLInputElement | null;
@@ -119,7 +125,7 @@ function loadSystemIntoState(state: AppState, payload: MapPayload): void {
   setEditorSystem(payload.starSystem, state.gmNotes || '');
 }
 
-function initPasteControls(state: AppState): void {
+function initPasteControls(state: AppState): { updateViewModeButton: () => void } {
   const systemPaste = document.getElementById('system-paste') as HTMLTextAreaElement | null;
   const btnLoadSystem = document.getElementById('btn-load-system') as HTMLButtonElement | null;
   const btnDownloadSystem = document.getElementById('btn-download-system') as HTMLButtonElement | null;
@@ -129,17 +135,41 @@ function initPasteControls(state: AppState): void {
   const btnExportInteractive = document.getElementById('btn-export-interactive') as HTMLButtonElement | null;
   const btnExportCsv = document.getElementById('btn-export-csv') as HTMLButtonElement | null;
   const btnExportDocx = document.getElementById('btn-export-docx') as HTMLButtonElement | null;
+  const btnViewMode = document.getElementById('btn-view-mode') as HTMLButtonElement | null;
 
   if (btnGenerateSystem) {
     btnGenerateSystem.addEventListener('click', () => {
       const payload = generateRandomSystem();
       loadSystemIntoState(state, payload);
+      updateViewModeButton();
+    });
+  }
+
+  function updateViewModeButton() {
+    if (!btnViewMode) return;
+    const hasBarycenter = currentPayload?.starSystem?.barycenterView != null;
+    btnViewMode.style.display = hasBarycenter ? 'block' : 'none';
+    if (state.viewMode === 'barycenter') {
+      btnViewMode.textContent = '☉ Planetary View';
+    } else {
+      btnViewMode.textContent = '★ Barycenter View';
+    }
+  }
+
+  if (btnViewMode) {
+    btnViewMode.addEventListener('click', () => {
+      state.viewMode = state.viewMode === 'planetary' ? 'barycenter' : 'planetary';
+      updateViewModeButton();
+      if (currentPayload) {
+        loadSystemIntoState(state, currentPayload);
+      }
     });
   }
 
   if (btnLoadSol) {
     btnLoadSol.addEventListener('click', () => {
       loadSystemIntoState(state, solPayload);
+      updateViewModeButton();
     });
   }
 
@@ -150,6 +180,7 @@ function initPasteControls(state: AppState): void {
         try {
           loadSystemIntoState(state, payload);
           systemPaste.value = '';
+          updateViewModeButton();
         } catch (err) {
           console.error('Failed to load system:', err);
           alert(`Failed to load system: ${err instanceof Error ? err.message : String(err)}`);
@@ -243,6 +274,8 @@ function initPasteControls(state: AppState): void {
       URL.revokeObjectURL(url);
     });
   }
+
+  return { updateViewModeButton };
 }
 
 function main() {
@@ -308,24 +341,10 @@ function main() {
   }
 
   if (urlPayload) {
-    currentPayload = urlPayload;
-    state.starfieldSeed = urlPayload.starfieldSeed || state.starfieldSeed;
-    state.epochDate = new Date(
-      Date.UTC(urlPayload.epoch.year, urlPayload.epoch.month - 1, urlPayload.epoch.day)
-    );
-    try {
-      state.bodies = buildSceneGraph(urlPayload.starSystem);
-    } catch (err) {
-      console.error('[main] buildSceneGraph failed for URL payload:', err);
-      alert('Failed to build scene graph from URL. Check console for details.');
-    }
+    loadSystemIntoState(state, urlPayload);
   } else {
     // Load Sol system by default for demonstration
-    currentPayload = solPayload;
-    state.starfieldSeed = solPayload.starfieldSeed;
-    state.epochDate = new Date(
-      Date.UTC(solPayload.epoch.year, solPayload.epoch.month - 1, solPayload.epoch.day)
-    );
+    loadSystemIntoState(state, solPayload);
     try {
       state.bodies = buildSceneGraph(solPayload.starSystem);
     } catch (err) {
@@ -350,7 +369,8 @@ function main() {
   initUIControls(state, resetView);
   initInputHandlers(state, resetView);
   initRenderer(state);
-  initPasteControls(state);
+  const pasteControls = initPasteControls(state);
+  pasteControls.updateViewModeButton();
 
   // FRD-053 Phase 2: Embed mode chrome hiding
   if (isEmbed) {

@@ -273,6 +273,46 @@ export function buildSceneGraph(system: StarSystem): SceneBody[] {
   return bodies;
 }
 
+/**
+ * Build a barycenter scene graph for multi-star systems.
+ * All stars orbit the common barycenter at (0,0).  No planets, disks, or moons.
+ * Inclination is preserved as a label even though the 2D projection ignores it.
+ */
+export function buildBarycenterScene(system: StarSystem): SceneBody[] {
+  const bodies: SceneBody[] = [];
+  const bv = system.barycenterView;
+  if (!bv || bv.stars.length === 0) return bodies;
+
+  const AU_IN_KM = 149597870.7;
+  const SECONDS_PER_DAY = 86400;
+
+  for (const star of bv.stars) {
+    const isPrimary = star.isPrimary;
+    const periodDays = star.periodYears > 0 ? star.periodYears * 365.25 : 0;
+    const velocityKms =
+      periodDays > 0
+        ? (2 * Math.PI * star.distanceAU * AU_IN_KM) / (periodDays * SECONDS_PER_DAY)
+        : 0;
+
+    bodies.push({
+      id: `bary-star-${star.starId}`,
+      type: isPrimary ? 'star-primary' : 'star-companion',
+      label: `${star.class}${star.grade}${star.inclinationDeg > 0 ? ' · ' + star.inclinationDeg + '°' : ''}`,
+      distanceAU: star.distanceAU,
+      mass: star.mass,
+      radiusPx: isPrimary ? 14 : 10,
+      colour: getSpectralColour(star.class),
+      strokeColour: '#ffffff',
+      angle: star.angleRad,
+      periodDays,
+      isMainWorld: false,
+      velocityKms: Math.round(velocityKms * 10) / 10,
+    });
+  }
+
+  return bodies;
+}
+
 function normalizeGasClass(gasClass: number | string): number {
   if (typeof gasClass === 'number') return gasClass;
   const map: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };

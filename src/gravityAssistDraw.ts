@@ -22,6 +22,10 @@ export interface AssistWaypoint {
   deltaVKms: number;
   side: 'leading' | 'trailing';
   soiRadiusPx: number;
+  /** Days from departure when ship reaches entryPos (for animation). */
+  entryDayOffset: number;
+  /** Days from departure when ship leaves exitPos (for animation). */
+  exitDayOffset: number;
 }
 
 /**
@@ -129,7 +133,8 @@ export function drawGravityAssistTrajectory(
   originPos: { x: number; y: number },
   destPos: { x: number; y: number },
   waypoints: AssistWaypoint[],
-  progress: number // 0.0 → 1.0 along entire journey
+  progress: number, // 0.0 → 1.0 along entire journey (time-based)
+  totalDays: number // total journey time in days (for scaling)
 ): void {
   if (waypoints.length === 0) return;
 
@@ -221,26 +226,58 @@ export function drawGravityAssistTrajectory(
     );
   }
 
-  // ── Draw spacecraft position along path ──
-  const totalSegments = legs.length + waypoints.length;
-  const segmentProgress = progress * totalSegments;
-  const currentSegment = Math.floor(segmentProgress);
-  const segmentT = segmentProgress - currentSegment;
+  // ── Draw spacecraft position along path (time-based interpolation) ──
+  // Build keyframes: each point has a day offset from departure.
+  // The ship spends most of its time on interplanetary legs; the hyperbolic
+  // flyby is treated as a brief 0.5-day event for visual smoothness.
+  interface Keyframe {
+    pos: { x: number; y: number };
+    day: number;
+  }
 
-  let shipX = originPos.x;
-  let shipY = originPos.y;
+  const keyframes: Keyframe[] = [{ pos: originPos, day: 0 }];
 
-  if (currentSegment < legs.length) {
-    // On an interplanetary leg
-    const leg = legs[currentSegment];
-    shipX = leg.from.x + (leg.to.x - leg.from.x) * segmentT;
-    shipY = leg.from.y + (leg.to.y - leg.from.y) * segmentT;
-  } else if (waypoints.length > 0) {
-    // On a hyperbolic arc
-    const wpIdx = currentSegment - legs.length;
-    const wp = waypoints[wpIdx];
-    shipX = wp.entryPos.x + (wp.exitPos.x - wp.entryPos.x) * segmentT;
-    shipY = wp.entryPos.y + (wp.exitPos.y - wp.entryPos.y) * segmentT;
+  for (const wp of waypoints) {
+    keyframes.push({ pos: wp.entryPos, day: wp.entryDayOffset });
+    // Periapsis at midpoint of entry→exit window
+    const periapsisDay = (wp.entryDayOffset + wp.exitDayOffset) * 0.5;
+    keyframes.push({ pos: wp.periapsisPos, day: periapsisDay });
+    keyframes.push({ pos: wp.exitPos, day: wp.exitDayOffset });
+  }
+
+  keyframes.push({ pos: destPos, day: totalDays });
+
+  // Ensure monotonically increasing days (clamp tiny overlaps)
+  for (let i = 1; i < keyframes.length; i++) {
+    if (keyframes[i].day < keyframes[i - 1].day + 0.01) {
+      keyframes[i].day = keyframes[i - 1].day + 0.01;
+    }
+  }
+
+  const travelDayOffset = progress * totalDays;
+
+  let shipX = destPos.x;
+  let shipY = destPos.y;
+
+  if (progress <= 0) {
+    shipX = originPos.x;
+    shipY = originPos.y;
+  } else if (progress >= 1) {
+    shipX = destPos.x;
+    shipY = destPos.y;
+  } else {
+    // Find the segment containing travelDayOffset
+    for (let i = 0; i < keyframes.length - 1; i++) {
+      const k0 = keyframes[i];
+      const k1 = keyframes[i + 1];
+      if (travelDayOffset >= k0.day && travelDayOffset <= k1.day) {
+        const segmentDuration = k1.day - k0.day;
+        const t = segmentDuration > 0 ? (travelDayOffset - k0.day) / segmentDuration : 0;
+        shipX = k0.pos.x + (k1.pos.x - k0.pos.x) * t;
+        shipY = k0.pos.y + (k1.pos.y - k0.pos.y) * t;
+        break;
+      }
+    }
   }
 
   // Ship marker
@@ -266,7 +303,8 @@ export function generateRealWaypoints(
   starMassSolar: number,
   departureDayOffset: number,
   useMultiLegChains: boolean,
-  maxAssists: number
+  maxAssists: number,
+  totalDays: number
 ): AssistWaypoint[] {
   const origin = state.bodies.find(b => b.id === originId);
   const destination = state.bodies.find(b => b.id === destId);
@@ -295,7 +333,18 @@ export function generateRealWaypoints(
     };
   }
 
+  // Sort chronologically so the animation follows the actual flight order
+  limitedAssists.sort((a, b) => a.flybyDayOffset - b.flybyDayOffset);
+
   const waypoints: AssistWaypoint[] = [];
+  let currentDayOffset = 0;
+
+  // Estimate an average px-per-day speed from the direct trajectory for
+  // inter-waypoint legs when multiple independent assists are shown.
+  const originPos = bodyScreenPosAt(origin, departureDayOffset);
+  const destPos = bodyScreenPosAt(destination, departureDayOffset + totalDays);
+  const directDistPx = Math.hypot(destPos.x - originPos.x, destPos.y - originPos.y);
+  const avgSpeedPxPerDay = directDistPx / Math.max(1, totalDays);
 
   for (let i = 0; i < limitedAssists.length; i++) {
     const assist = limitedAssists[i];
@@ -316,7 +365,7 @@ export function generateRealWaypoints(
     // Previous waypoint position (origin or previous assist)
     let prevPos: { x: number; y: number };
     if (i === 0) {
-      prevPos = bodyScreenPosAt(origin, departureDayOffset);
+      prevPos = originPos;
     } else {
       const prevAssist = limitedAssists[i - 1];
       const prevBody = state.bodies.find(b => b.id === prevAssist.bodyId);
@@ -354,6 +403,23 @@ export function generateRealWaypoints(
       y: bodyPos.y + Math.sin(midAngle) * rpPx,
     };
 
+    // ── Compute animation timing for this waypoint ──
+    // For the first waypoint we have real physics (leg1TimeDays).
+    // For subsequent waypoints we estimate from screen distance.
+    let legTimeDays: number;
+    if (i === 0) {
+      legTimeDays = assist.leg1TimeDays;
+    } else {
+      const interDistPx = Math.hypot(entryPos.x - prevPos.x, entryPos.y - prevPos.y);
+      legTimeDays = avgSpeedPxPerDay > 0 ? interDistPx / avgSpeedPxPerDay : 0;
+    }
+
+    currentDayOffset += legTimeDays;
+    const flybyDuration = Math.min(0.5, totalDays * 0.02); // brief SOI passage
+    const entryDayOffset = Math.max(0, currentDayOffset - flybyDuration * 0.5);
+    const exitDayOffset = currentDayOffset + flybyDuration * 0.5;
+    currentDayOffset = exitDayOffset;
+
     waypoints.push({
       bodyId: assist.bodyId,
       bodyLabel: assist.bodyLabel,
@@ -365,7 +431,25 @@ export function generateRealWaypoints(
       deltaVKms: assist.deltaVKms,
       side: assist.isAccelerating ? 'trailing' : 'leading',
       soiRadiusPx: soiPx,
+      entryDayOffset,
+      exitDayOffset,
     });
+  }
+
+  // Scale all day offsets so the final leg (last exit → destination) lands
+  // exactly at totalDays.  This preserves the relative timing of the known
+  // physics legs while ensuring the ship reaches destPos at progress = 1.0.
+  const lastAssist = waypoints[waypoints.length - 1];
+  if (lastAssist && totalDays > 0) {
+    const finalLegPhysics = limitedAssists[limitedAssists.length - 1]?.leg2TimeDays ?? 0;
+    const unscaledTotal = lastAssist.exitDayOffset + finalLegPhysics;
+    if (unscaledTotal > 0 && Math.abs(unscaledTotal - totalDays) > 0.1) {
+      const scale = totalDays / unscaledTotal;
+      for (const wp of waypoints) {
+        wp.entryDayOffset *= scale;
+        wp.exitDayOffset *= scale;
+      }
+    }
   }
 
   return waypoints;

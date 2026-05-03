@@ -105,6 +105,23 @@ function draw(
   const originX = cx - camera.x * camera.zoom;
   const originY = cy - camera.y * camera.zoom;
 
+  // Barycenter marker (FRD-067)
+  if (state.viewMode === 'barycenter') {
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+    ctx.lineWidth = 1.5;
+    const s = 6;
+    ctx.beginPath();
+    ctx.moveTo(originX - s, originY);
+    ctx.lineTo(originX + s, originY);
+    ctx.moveTo(originX, originY - s);
+    ctx.lineTo(originX, originY + s);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(originX, originY, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Zone bands (behind orbits)
   if (zones) {
     const maxBodyDistAU = bodies.length > 0 ? Math.max(...bodies.map(b => b.distanceAU)) : 80;
@@ -201,11 +218,11 @@ function updateBodyTooltip(state: AppState): void {
 const DISK_COLOURS = ['#8B7355', '#A0522D', '#CD853F'];
 
 const ZONE_BANDS: { key: keyof ZoneBoundaries; inner: string; outer: string; label: string }[] = [
-  { key: 'infernal', inner: 'rgba(255,60,60,0.18)', outer: 'rgba(255,60,60,0.02)', label: 'Infernal' },
-  { key: 'hot', inner: 'rgba(255,140,40,0.12)', outer: 'rgba(255,140,40,0.02)', label: 'Hot' },
-  { key: 'conservative', inner: 'rgba(40,220,100,0.10)', outer: 'rgba(40,220,100,0.02)', label: 'Habitable' },
-  { key: 'cold', inner: 'rgba(60,140,255,0.10)', outer: 'rgba(60,140,255,0.02)', label: 'Cool' },
-  { key: 'outer', inner: 'rgba(140,100,255,0.06)', outer: 'rgba(140,100,255,0.01)', label: 'Outer' },
+  { key: 'infernal', inner: 'rgba(255,60,60,0.35)', outer: 'rgba(255,60,60,0.08)', label: 'Infernal' },
+  { key: 'hot', inner: 'rgba(255,140,40,0.28)', outer: 'rgba(255,140,40,0.06)', label: 'Hot' },
+  { key: 'conservative', inner: 'rgba(40,220,100,0.22)', outer: 'rgba(40,220,100,0.05)', label: 'Habitable' },
+  { key: 'cold', inner: 'rgba(60,140,255,0.22)', outer: 'rgba(60,140,255,0.05)', label: 'Cool' },
+  { key: 'outer', inner: 'rgba(140,100,255,0.18)', outer: 'rgba(140,100,255,0.04)', label: 'Outer' },
 ];
 
 function drawZoneBands(
@@ -306,6 +323,69 @@ function computeBodyFrames(
   }
 
   return frames;
+}
+
+function drawDirectTrajectory(
+  ctx: CanvasRenderingContext2D,
+  departurePos: { x: number; y: number },
+  arrivalPos: { x: number; y: number },
+  progress: number,
+  pathColor: string,
+  isPossible: boolean
+): void {
+  const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
+  const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
+
+  ctx.save();
+
+  // Full planned path (faint background)
+  ctx.strokeStyle = `rgba(${pathColor},0.15)`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(departurePos.x, departurePos.y);
+  ctx.lineTo(arrivalPos.x, arrivalPos.y);
+  ctx.stroke();
+
+  // Travelled segment (solid, brighter)
+  ctx.strokeStyle = `rgba(${pathColor},0.9)`;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(departurePos.x, departurePos.y);
+  ctx.lineTo(mx, my);
+  ctx.stroke();
+
+  // Remaining segment (dashed)
+  ctx.strokeStyle = `rgba(${pathColor},0.4)`;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.lineTo(arrivalPos.x, arrivalPos.y);
+  ctx.stroke();
+
+  // Arrival marker
+  ctx.setLineDash([]);
+  ctx.strokeStyle = isPossible ? 'rgba(251,146,60,0.8)' : 'rgba(239,68,68,0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(arrivalPos.x - 6, arrivalPos.y);
+  ctx.lineTo(arrivalPos.x + 6, arrivalPos.y);
+  ctx.moveTo(arrivalPos.x, arrivalPos.y - 6);
+  ctx.lineTo(arrivalPos.x, arrivalPos.y + 6);
+  ctx.stroke();
+
+  // Spacecraft chevron at current position
+  const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
+  ctx.fillStyle = isPossible ? 'rgba(251,146,60,0.95)' : 'rgba(239,68,68,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
+  ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
+  ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function drawTravelPlannerOverlays(
@@ -459,64 +539,17 @@ function drawTravelPlannerOverlays(
         const maxAssists = tp.useMultiLegChains ? 2 : 1;
         const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
         const waypoints = generateRealWaypoints(
-          state, tp.originId, tp.destinationId, starMassSolar, departureDay, tp.useMultiLegChains, maxAssists
+          state, tp.originId, tp.destinationId, starMassSolar, departureDay, tp.useMultiLegChains, maxAssists, totalDays
         );
-        drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress);
+        if (waypoints.length > 0) {
+          drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress, totalDays);
+        } else {
+          // No viable assists found — fall back to direct chord
+          drawDirectTrajectory(ctx, departurePos, arrivalPos, progress, pathColor, isPossible);
+        }
       } else {
         // Standard direct chord
-        const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
-        const my = departurePos.y + (arrivalPos.y - departurePos.y) * progress;
-
-        ctx.save();
-
-        // Full planned path (faint background)
-        ctx.strokeStyle = `rgba(${pathColor},0.15)`;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(departurePos.x, departurePos.y);
-        ctx.lineTo(arrivalPos.x, arrivalPos.y);
-        ctx.stroke();
-
-        // Travelled segment (solid, brighter)
-        ctx.strokeStyle = `rgba(${pathColor},0.9)`;
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(departurePos.x, departurePos.y);
-        ctx.lineTo(mx, my);
-        ctx.stroke();
-
-        // Remaining segment (dashed)
-        ctx.strokeStyle = `rgba(${pathColor},0.4)`;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(mx, my);
-        ctx.lineTo(arrivalPos.x, arrivalPos.y);
-        ctx.stroke();
-
-        // Arrival marker
-        ctx.setLineDash([]);
-        ctx.strokeStyle = isPossible ? 'rgba(251,146,60,0.8)' : 'rgba(239,68,68,0.8)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(arrivalPos.x - 6, arrivalPos.y);
-        ctx.lineTo(arrivalPos.x + 6, arrivalPos.y);
-        ctx.moveTo(arrivalPos.x, arrivalPos.y - 6);
-        ctx.lineTo(arrivalPos.x, arrivalPos.y + 6);
-        ctx.stroke();
-
-        // Spacecraft chevron at current position
-        const angle = Math.atan2(arrivalPos.y - departurePos.y, arrivalPos.x - departurePos.x);
-        ctx.fillStyle = isPossible ? 'rgba(251,146,60,0.95)' : 'rgba(239,68,68,0.95)';
-        ctx.beginPath();
-        ctx.moveTo(mx + Math.cos(angle) * 6, my + Math.sin(angle) * 6);
-        ctx.lineTo(mx + Math.cos(angle + 2.5) * 4, my + Math.sin(angle + 2.5) * 4);
-        ctx.lineTo(mx + Math.cos(angle - 2.5) * 4, my + Math.sin(angle - 2.5) * 4);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.restore();
+        drawDirectTrajectory(ctx, departurePos, arrivalPos, progress, pathColor, isPossible);
       }
     }
   } else {

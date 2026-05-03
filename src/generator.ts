@@ -163,6 +163,43 @@ export function generateRandomSystem(): MapPayload {
     mainWorld = { type: 'Dwarf', distanceAU: d.distanceAU, massEM: d.mass };
   }
 
+  // FRD-067: compute a simple barycenter view for random multi-star systems
+  let barycenterView: StarSystem['barycenterView'];
+  if (companions.length > 0) {
+    const totalMass = star.mass + companions.reduce((s, c) => s + c.mass, 0);
+    const primaryDistance = companions.reduce(
+      (s, c) => s + (c.orbitDistance ?? 0) * (c.mass / totalMass),
+      0
+    );
+    const baryStars = [
+      {
+        starId: 'primary',
+        isPrimary: true,
+        class: star.class,
+        grade: star.grade,
+        mass: star.mass,
+        distanceAU: Math.round(primaryDistance * 100) / 100,
+        periodYears: 0,
+        eccentricity: 0,
+        inclinationDeg: randInt(0, 5) * 30,
+        angleRad: Math.round(Math.random() * Math.PI * 2 * 100) / 100,
+      },
+      ...companions.map((c, i) => ({
+        starId: `companion-${i}`,
+        isPrimary: false,
+        class: c.class,
+        grade: c.grade,
+        mass: c.mass,
+        distanceAU: Math.round(((c.orbitDistance ?? 0) * star.mass) / totalMass * 100) / 100,
+        periodYears: 0,
+        eccentricity: 0,
+        inclinationDeg: randInt(0, 5) * 30,
+        angleRad: Math.round(Math.random() * Math.PI * 2 * 100) / 100,
+      })),
+    ];
+    barycenterView = { stars: baryStars };
+  }
+
   const system: StarSystem = {
     key: Math.random().toString(36).slice(2, 10),
     primaryStar: { class: star.class, grade: star.grade, mass: star.mass },
@@ -173,6 +210,7 @@ export function generateRandomSystem(): MapPayload {
     iceWorlds: ices,
     gasWorlds: gases,
     mainWorld,
+    barycenterView,
   };
 
   return {

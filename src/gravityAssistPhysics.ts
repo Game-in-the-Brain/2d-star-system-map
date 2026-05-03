@@ -179,10 +179,9 @@ export function findAssistOpportunities(
     );
     if (!assistTransfer) continue;
 
-    // Only include if the assist provides meaningful benefit
+    // Only include if the assist actually reduces propulsive delta-V
     const benefitRatio = directDeltaV > 0 ? (directDeltaV - assistTransfer.totalDeltaVKms) / directDeltaV : 0;
-    const isUseful = benefitRatio > 0.05 || assistTransfer.assistDeltaVKms > 2.0;
-    if (!isUseful) continue;
+    if (benefitRatio <= 0.05) continue;
 
     const isAccelerating = assistTransfer.assistDeltaVKms > 0 &&
       destination.distanceAU > origin.distanceAU;
@@ -190,16 +189,19 @@ export function findAssistOpportunities(
     assists.push({
       bodyId: body.id,
       bodyLabel: body.label,
-      flybyDayOffset: departureDayOffset + assistTransfer.totalTimeDays * 0.5,
+      flybyDayOffset: departureDayOffset + assistTransfer.leg1TimeDays,
       flybyAltitudeKm: 500,
       vInfinityKms: assistTransfer.assistDeltaVKms,
       turningAngleDeg: assistTransfer.flybyTurningAngleDeg,
       deltaVKms: Math.abs(assistTransfer.assistDeltaVKms),
+      routeDeltaVKms: assistTransfer.totalDeltaVKms,
       isAccelerating,
       isValid: true,
       warning: assistTransfer.flybyTurningAngleDeg > 60
         ? 'High turning angle — check thermal loading'
         : undefined,
+      leg1TimeDays: assistTransfer.leg1TimeDays,
+      leg2TimeDays: assistTransfer.leg2TimeDays,
     });
   }
 
@@ -317,9 +319,12 @@ function findTwoLegChains(
         vInfinityKms: vInfIn1.magnitude + vInfIn2.magnitude,
         turningAngleDeg: (requiredTurn1 + requiredTurn2) * 180 / Math.PI,
         deltaVKms: Math.abs(directDeltaV - totalDV),
+        routeDeltaVKms: totalDV,
         isAccelerating: destination.distanceAU > origin.distanceAU,
         isValid: true,
         warning: `2-leg chain, total ${totalTime.toFixed(0)}d, propulsive ΔV ${totalDV.toFixed(2)} km/s`,
+        leg1TimeDays: leg1.timeOfFlightDays,
+        leg2TimeDays: leg3.timeOfFlightDays,
       });
     }
   }

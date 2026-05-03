@@ -302,18 +302,19 @@ function generateHabitability(
     // Clamp
     const clampedFinal = Math.max(-10, Math.min(10, calculatedFinal));
 
-    // Compare with book (book value is FINAL habitability)
-    const diff = Math.abs(clampedFinal - world.habitability);
-    if (diff >= 2) {
-      conflicts.push(makeConflict(
-        'habitability-mismatch',
-        diff >= 5 ? 'major' : 'minor',
-        world,
-        'habitability',
-        `${world.habitability}`,
-        `${clampedFinal} (baseline=${baseline} + TL${tlMod > 0 ? '+' + tlMod : ''})`
-      ));
-    }
+    // ─── Habitability Policy ───
+    // RECOMMENDATION APPROVED: Keep book habitability for existing worlds.
+    // MWG habitability is used ONLY for newly generated worlds (see generate-starsystem-jsons.py).
+    // Book habitability values incorporate narrative/story factors that the physics
+    // formula cannot capture (e.g., Aleph hab=9 despite toxic atmosphere due to
+    // teeming subterranean life and artificial habitats).
+    //
+    // Therefore: do NOT flag habitability mismatches as conflicts for book worlds.
+    // The book value is canonical. MWG-calculated value is advisory only.
+    //
+    // const diff = Math.abs(clampedFinal - world.habitability);
+    // if (diff >= 2) { ... }
+    // ───────────────────────────
   }
 
   return { conflicts };

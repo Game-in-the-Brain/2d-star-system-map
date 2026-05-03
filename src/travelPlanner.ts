@@ -2,6 +2,7 @@ import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelin
 import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './travelPhysics';
 import { toTravelBody, calculateTravel, brachistochroneTimeDays } from './travelCalc';
 import { patchedConicTransfer } from './patchedConic';
+import { findAssistOpportunities } from './gravityAssistPhysics';
 import { logScaleDistance } from './camera';
 
 const HIT_RADIUS_PX = 18;
@@ -215,10 +216,17 @@ export function initTravelPlanner(state: AppState): void {
   const resWaitTotal = document.getElementById('res-wait-total');
   const btnExportCalc = document.getElementById('btn-export-calc') as HTMLButtonElement | null;
 
-  // FRD-064: Deadline
-  const travelDeadlineSection = document.getElementById('travel-deadline-section');
+  // Patched Conic Baseline (always visible)
+  const travelPatchedConicSection = document.getElementById('travel-patched-conic-section');
   const resHohmannDv = document.getElementById('res-hohmann-dv');
   const resHohmannTime = document.getElementById('res-hohmann-time');
+  const travelAssistRow = document.getElementById('travel-assist-row');
+  const resAssistDv = document.getElementById('res-assist-dv');
+  const travelAssistSavingsRow = document.getElementById('travel-assist-savings-row');
+  const resAssistSavings = document.getElementById('res-assist-savings');
+
+  // FRD-064: Deadline
+  const travelDeadlineSection = document.getElementById('travel-deadline-section');
   const resDeadlineDv = document.getElementById('res-deadline-dv');
   const resDeadlineStatus = document.getElementById('res-deadline-status');
 
@@ -350,6 +358,37 @@ export function initTravelPlanner(state: AppState): void {
     }
   }
 
+  function displayPatchedConicResults(
+    hohmann: ReturnType<typeof patchedConicTransfer>,
+    bestAssist: { assistDv: number; totalDv: number; bodyLabel: string } | null
+  ) {
+    if (!travelPatchedConicSection) return;
+    travelPatchedConicSection.style.display = 'block';
+
+    if (resHohmannDv) {
+      resHohmannDv.textContent = hohmann ? `${hohmann.totalDeltaVKms.toFixed(2)} km/s` : '—';
+    }
+    if (resHohmannTime) {
+      resHohmannTime.textContent = hohmann ? `${hohmann.timeOfFlightDays.toFixed(0)}d` : '—';
+    }
+
+    if (bestAssist && travelAssistRow && resAssistDv) {
+      travelAssistRow.style.display = 'flex';
+      resAssistDv.textContent = `${bestAssist.totalDv.toFixed(2)} km/s via ${bestAssist.bodyLabel}`;
+    } else if (travelAssistRow) {
+      travelAssistRow.style.display = 'none';
+    }
+
+    if (bestAssist && hohmann && travelAssistSavingsRow && resAssistSavings) {
+      travelAssistSavingsRow.style.display = 'flex';
+      const savings = hohmann.totalDeltaVKms - bestAssist.totalDv;
+      resAssistSavings.textContent = `−${savings.toFixed(2)} km/s`;
+      resAssistSavings.className = 'travel-result-value possible';
+    } else if (travelAssistSavingsRow) {
+      travelAssistSavingsRow.style.display = 'none';
+    }
+  }
+
   function displaySoiResults(calcResult: import('./types').TravelResult) {
     if (!travelResults) return;
     travelResults.style.display = 'flex';
@@ -429,9 +468,28 @@ export function initTravelPlanner(state: AppState): void {
     tp.lastCalcResult = calcResult;
     displaySoiResults(calcResult);
 
-    // 3. FRD-064: Deadline / fast transfer analysis
-    if (tp.deadlineDays && tp.deadlineDays > 0) {
-      const hohmannTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset);
+    // 3. Patched conic baseline (Hohmann) — always computed
+    const hohmannTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset);
+
+    // 4. Gravity assist analysis (when enabled)
+    let bestAssist: { assistDv: number; totalDv: number; bodyLabel: string } | null = null;
+    if (tp.useGravityAssists && hohmannTransfer) {
+      const assists = findAssistOpportunities(
+        originBody, destBody, state.bodies, starMassSolar, departureOffset, tp.useMultiLegChains
+      );
+      if (assists.length > 0) {
+        const top = assists[0];
+        bestAssist = {
+          assistDv: top.deltaVKms,
+          totalDv: top.routeDeltaVKms,
+          bodyLabel: top.bodyLabel,
+        };
+      }
+    }
+    displayPatchedConicResults(hohmannTransfer, bestAssist);
+
+    // 5. FRD-064: Deadline / fast transfer analysis
+    if (tp.deadlineDays && tp.deadlineDays > 0 && hohmannTransfer) {
       const deadlineTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset, tp.deadlineDays);
       displayDeadlineResults(hohmannTransfer, deadlineTransfer, budget);
     } else {

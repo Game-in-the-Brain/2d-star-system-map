@@ -63,6 +63,7 @@ function generateTestState(system: ReturnType<typeof generateRandomSystem>): App
     hoveredBodyId: null,
     lastMouseX: 0,
     lastMouseY: 0,
+    viewMode: 'planetary',
   };
 }
 
