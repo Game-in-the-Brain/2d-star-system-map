@@ -77,6 +77,16 @@ export function initUIControls(state: AppState, onResetView?: () => void): void 
 
   if (btnPlay) {
     btnPlay.addEventListener('click', () => {
+      // If travel timeline is driving simDayOffset, pause it first
+      // so the two controllers don't fight.
+      const tp = state.travelPlanner;
+      if (tp?.timeline.isPlaying) {
+        tp.timeline.isPlaying = false;
+        const tPlay = document.getElementById('btn-timeline-play') as HTMLButtonElement | null;
+        const tPause = document.getElementById('btn-timeline-pause') as HTMLButtonElement | null;
+        if (tPlay) tPlay.style.display = 'inline-block';
+        if (tPause) tPause.style.display = 'none';
+      }
       state.isPlaying = true;
       updatePlayPause();
     });

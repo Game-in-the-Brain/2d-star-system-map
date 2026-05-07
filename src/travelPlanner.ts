@@ -11,6 +11,7 @@ function createTimelineState(): TravelTimelineState {
   return {
     travelDayOffset: 0,
     isPlaying: false,
+    isReversed: false,
     isLooping: false,
     playbackSpeed: 1,
     pinnedDepartureDayOffset: null,
@@ -43,19 +44,39 @@ export function tickTravelTimeline(state: AppState, dt: number): void {
 
   const plan = tp.lastPlan;
   const tl = tp.timeline;
+  const direction = tl.isReversed ? -1 : 1;
+  const maxDays = plan.pessimisticArrivalDays;
 
-  tl.travelDayOffset += dt * tl.playbackSpeed * state.speed;
+  // Travel timeline uses its own playbackSpeed — independent of global state.speed
+  tl.travelDayOffset += dt * tl.playbackSpeed * direction;
 
-  if (tl.travelDayOffset >= plan.pessimisticArrivalDays) {
-    if (tl.isLooping) {
-      tl.travelDayOffset = 0;
-    } else {
-      tl.travelDayOffset = plan.pessimisticArrivalDays;
-      tl.isPlaying = false;
-      const btnPlay = document.getElementById('btn-timeline-play');
-      const btnPause = document.getElementById('btn-timeline-pause');
-      if (btnPlay) (btnPlay as HTMLButtonElement).style.display = 'inline-block';
-      if (btnPause) (btnPause as HTMLButtonElement).style.display = 'none';
+  if (!tl.isReversed) {
+    // Forward playback
+    if (tl.travelDayOffset >= maxDays) {
+      if (tl.isLooping) {
+        tl.travelDayOffset = 0;
+      } else {
+        tl.travelDayOffset = maxDays;
+        tl.isPlaying = false;
+        const btnPlay = document.getElementById('btn-timeline-play');
+        const btnPause = document.getElementById('btn-timeline-pause');
+        if (btnPlay) (btnPlay as HTMLButtonElement).style.display = 'inline-block';
+        if (btnPause) (btnPause as HTMLButtonElement).style.display = 'none';
+      }
+    }
+  } else {
+    // Reverse playback
+    if (tl.travelDayOffset <= 0) {
+      if (tl.isLooping) {
+        tl.travelDayOffset = maxDays;
+      } else {
+        tl.travelDayOffset = 0;
+        tl.isPlaying = false;
+        const btnPlay = document.getElementById('btn-timeline-play');
+        const btnPause = document.getElementById('btn-timeline-pause');
+        if (btnPlay) (btnPlay as HTMLButtonElement).style.display = 'inline-block';
+        if (btnPause) (btnPause as HTMLButtonElement).style.display = 'none';
+      }
     }
   }
 
@@ -69,7 +90,7 @@ export function tickTravelTimeline(state: AppState, dt: number): void {
 
   const counter = document.getElementById('travel-day-counter');
   if (counter) {
-    counter.textContent = `Day ${Math.round(tl.travelDayOffset)} / ${Math.round(plan.pessimisticArrivalDays)}`;
+    counter.textContent = `Day ${Math.round(tl.travelDayOffset)} / ${Math.round(maxDays)}`;
   }
 }
 
@@ -497,7 +518,9 @@ export function initTravelPlanner(state: AppState): void {
     }
 
     if (plan.isPossible) {
-      tp.timeline.travelDayOffset = 0;
+      // Preserve existing travel offset when recalculating (e.g. toggling assists),
+      // but clamp to the new plan's bounds so we don't exceed arrival.
+      tp.timeline.travelDayOffset = Math.max(0, Math.min(tp.timeline.travelDayOffset, plan.pessimisticArrivalDays));
       if (tp.timeline.pinnedDepartureDayOffset === null) {
         tp.timeline.pinnedDepartureDayOffset = departureOffset;
       }
@@ -523,9 +546,27 @@ export function initTravelPlanner(state: AppState): void {
 
   // Track active tab via direct click listeners (FRD §12.5)
   document.querySelector('.tab-btn[data-tab="travel"]')
-    ?.addEventListener('click', () => { tp.isActive = true; updatePanel(); });
+    ?.addEventListener('click', () => {
+      tp.isActive = true;
+      // Auto-pause global timeline when entering travel mode
+      state.isPlaying = false;
+      const mainPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
+      const mainPause = document.getElementById('btn-pause') as HTMLButtonElement | null;
+      if (mainPlay) mainPlay.style.display = 'inline-block';
+      if (mainPause) mainPause.style.display = 'none';
+      updatePanel();
+    });
   document.querySelectorAll('.tab-btn:not([data-tab="travel"])')
-    .forEach(btn => btn.addEventListener('click', () => { tp.isActive = false; }));
+    .forEach(btn => btn.addEventListener('click', () => {
+      tp.isActive = false;
+      // Stop travel timeline when leaving travel mode so it doesn't
+      // continue overwriting simDayOffset in the background
+      tp.timeline.isPlaying = false;
+      const btnPlay = document.getElementById('btn-timeline-play');
+      const btnPause = document.getElementById('btn-timeline-pause');
+      if (btnPlay) (btnPlay as HTMLButtonElement).style.display = 'inline-block';
+      if (btnPause) (btnPause as HTMLButtonElement).style.display = 'none';
+    }));
 
   // Inputs
   if (deltaVInput) {
@@ -679,6 +720,7 @@ export function initTravelPlanner(state: AppState): void {
   const btnTimelinePause = document.getElementById('btn-timeline-pause') as HTMLButtonElement | null;
   const btnTimelineReset = document.getElementById('btn-timeline-reset') as HTMLButtonElement | null;
   const btnTimelineLoop = document.getElementById('btn-timeline-loop') as HTMLButtonElement | null;
+  const btnTimelineReverse = document.getElementById('btn-timeline-reverse') as HTMLButtonElement | null;
   const btnPinDeparture = document.getElementById('btn-pin-departure') as HTMLButtonElement | null;
   const btnJumpArrival = document.getElementById('btn-jump-arrival') as HTMLButtonElement | null;
 
@@ -697,7 +739,7 @@ export function initTravelPlanner(state: AppState): void {
     timelineSlider.max = String(Math.ceil(plan.pessimisticArrivalDays));
     timelineSlider.value = String(Math.round(tp.timeline.travelDayOffset));
     updateTimelineZones(plan);
-    if (dayCounter) dayCounter.textContent = `Day 0 / ${Math.round(plan.pessimisticArrivalDays)}`;
+    if (dayCounter) dayCounter.textContent = `Day ${Math.round(tp.timeline.travelDayOffset)} / ${Math.round(plan.pessimisticArrivalDays)}`;
     timelineSection.style.display = 'flex';
   }
 
@@ -711,8 +753,14 @@ export function initTravelPlanner(state: AppState): void {
     tp.timeline.isPlaying = playing;
     if (btnTimelinePlay) btnTimelinePlay.style.display = playing ? 'none' : 'inline-block';
     if (btnTimelinePause) btnTimelinePause.style.display = playing ? 'inline-block' : 'none';
-    // Pause main sim while timeline is driving simDayOffset
-    if (playing) state.isPlaying = false;
+    // Pause main sim while timeline is driving simDayOffset, and sync main buttons
+    if (playing) {
+      state.isPlaying = false;
+      const mainPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
+      const mainPause = document.getElementById('btn-pause') as HTMLButtonElement | null;
+      if (mainPlay) mainPlay.style.display = 'inline-block';
+      if (mainPause) mainPause.style.display = 'none';
+    }
   }
 
   if (timelineSlider) {
@@ -753,6 +801,12 @@ export function initTravelPlanner(state: AppState): void {
     btnTimelineLoop.addEventListener('click', () => {
       tp.timeline.isLooping = !tp.timeline.isLooping;
       btnTimelineLoop.classList.toggle('active', tp.timeline.isLooping);
+    });
+  }
+  if (btnTimelineReverse) {
+    btnTimelineReverse.addEventListener('click', () => {
+      tp.timeline.isReversed = !tp.timeline.isReversed;
+      btnTimelineReverse.classList.toggle('active', tp.timeline.isReversed);
     });
   }
   if (btnPinDeparture) {

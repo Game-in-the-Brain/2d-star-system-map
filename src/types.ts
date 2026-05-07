@@ -214,6 +214,7 @@ export interface TravelPlan {
 export interface TravelTimelineState {
   travelDayOffset: number;      // days into journey (0 = launch)
   isPlaying: boolean;
+  isReversed: boolean;
   isLooping: boolean;
   playbackSpeed: number;        // days/sec multiplier
   pinnedDepartureDayOffset: number | null;
