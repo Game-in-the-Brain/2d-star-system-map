@@ -163,14 +163,29 @@ export function generateRandomSystem(): MapPayload {
     mainWorld = { type: 'Dwarf', distanceAU: d.distanceAU, massEM: d.mass };
   }
 
-  // FRD-067: compute a simple barycenter view for random multi-star systems
+  // FRD-067: compute barycenter view for random multi-star systems.
+  // Each companion gets a random orbital phase around the primary.
+  // The system barycenter is the mass-weighted average of all star positions.
   let barycenterView: StarSystem['barycenterView'];
   if (companions.length > 0) {
     const totalMass = star.mass + companions.reduce((s, c) => s + c.mass, 0);
-    const primaryDistance = companions.reduce(
-      (s, c) => s + (c.orbitDistance ?? 0) * (c.mass / totalMass),
-      0
-    );
+
+    // Assign random angles and compute Cartesian positions relative to primary
+    const companionAngles = companions.map(() => Math.random() * Math.PI * 2);
+    const companionPositions = companions.map((c, i) => ({
+      x: (c.orbitDistance ?? 0) * Math.cos(companionAngles[i]),
+      y: (c.orbitDistance ?? 0) * Math.sin(companionAngles[i]),
+      mass: c.mass,
+    }));
+
+    // Barycenter offset from primary (mass-weighted average)
+    const baryX = companionPositions.reduce((s, p, i) => s + p.x * companions[i].mass, 0) / totalMass;
+    const baryY = companionPositions.reduce((s, p, i) => s + p.y * companions[i].mass, 0) / totalMass;
+
+    // Compute each star's polar coordinates relative to the barycenter
+    const primaryDist = Math.sqrt(baryX * baryX + baryY * baryY);
+    const primaryAngle = Math.atan2(-baryY, -baryX);
+
     const baryStars = [
       {
         starId: 'primary',
@@ -178,24 +193,28 @@ export function generateRandomSystem(): MapPayload {
         class: star.class,
         grade: star.grade,
         mass: star.mass,
-        distanceAU: Math.round(primaryDistance * 100) / 100,
+        distanceAU: Math.round(primaryDist * 100) / 100,
         periodYears: 0,
         eccentricity: 0,
         inclinationDeg: randInt(0, 5) * 30,
-        angleRad: Math.round(Math.random() * Math.PI * 2 * 100) / 100,
+        angleRad: Math.round(primaryAngle * 100) / 100,
       },
-      ...companions.map((c, i) => ({
-        starId: `companion-${i}`,
-        isPrimary: false,
-        class: c.class,
-        grade: c.grade,
-        mass: c.mass,
-        distanceAU: Math.round(((c.orbitDistance ?? 0) * star.mass) / totalMass * 100) / 100,
-        periodYears: 0,
-        eccentricity: 0,
-        inclinationDeg: randInt(0, 5) * 30,
-        angleRad: Math.round(Math.random() * Math.PI * 2 * 100) / 100,
-      })),
+      ...companions.map((c, i) => {
+        const dx = companionPositions[i].x - baryX;
+        const dy = companionPositions[i].y - baryY;
+        return {
+          starId: `companion-${i}`,
+          isPrimary: false,
+          class: c.class,
+          grade: c.grade,
+          mass: c.mass,
+          distanceAU: Math.round(Math.sqrt(dx * dx + dy * dy) * 100) / 100,
+          periodYears: 0,
+          eccentricity: 0,
+          inclinationDeg: randInt(0, 5) * 30,
+          angleRad: Math.round(Math.atan2(dy, dx) * 100) / 100,
+        };
+      }),
     ];
     barycenterView = { stars: baryStars };
   }
