@@ -8,8 +8,8 @@
 
 ### 1.1 Animation / Time Sync (Critical)
 
-#### Issue A: Shared `simDayOffset` causes planet jumps
-**File:** `src/travelPlanner.ts:52-60`
+#### Issue A: Shared `simDayOffset` causes planet jumps — ✅ FIXED v2.27
+**File:** `src/travelPlanner.ts`
 
 When the travel timeline plays, it overwrites the **global** `state.simDayOffset`:
 
@@ -20,20 +20,29 @@ state.simDayOffset = departure + tl.travelDayOffset;
 
 This means ALL planets instantly snap to the departure date the moment travel playback starts. If the user had the main timeline at day 1000 and opens a travel plan departing at day 0, every planet jumps back to day 0.
 
-**Impact:** Jarring UX, breaks mental model of "watching a voyage".
+**Fix (v2.27):**
+- Auto-pause global timeline when entering Travel tab
+- Stop travel timeline when leaving Travel tab
+- Main Play button pauses travel timeline first to prevent controller conflict
+- Travel timeline uses independent `playbackSpeed` (no longer multiplies by `state.speed`)
 
-#### Issue B: Travel timeline progress is linear, but planet motion is angular
-**File:** `src/renderer.ts:495-510`
+#### Issue B: Travel timeline progress is linear, but planet motion is angular — ✅ FIXED v2.29
+**File:** `src/renderer.ts`
 
-`drawDirectTrajectory` computes ship position as linear interpolation between departure and arrival **screen positions**:
+`drawDirectTrajectory` computed ship position as linear interpolation between departure and arrival **screen positions**:
 
 ```typescript
 const mx = departurePos.x + (arrivalPos.x - departurePos.x) * progress;
 ```
 
-But planets move on circular orbits. At `progress = 0.5` the ship is at the midpoint of the chord, not the midpoint of the Lambert arc. The visual trajectory is a straight line, not the actual curved transfer orbit.
+But planets move on circular orbits. At `progress = 0.5` the ship was at the midpoint of the chord, not the midpoint of the Lambert arc.
 
-**Impact:** Ship appears to fly through the star or cut across inner system planets.
+**Fix (v2.29):**
+- Replaced `drawDirectTrajectory` with `drawCurvedTrajectory`
+- Uses `solveLambert(r1, r2, dt, mu)` + `sampleTransferOrbit(..., 96 points)`
+- Converts AU-space orbit points to screen coords via log-scale
+- Ship position interpolated along the curved arc, not a straight chord
+- Falls back to chord if Lambert solve fails
 
 #### Issue C: Mixed physics/estimated timing in gravity-assist waypoints
 **File:** `src/gravityAssistDraw.ts:260-290`

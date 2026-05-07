@@ -261,6 +261,16 @@ function trueAnomalyAtTime(
 
 ---
 
+## Implementation Status
+
+| Feature | Status | Version |
+|---|---|---|
+| `solveLambert` — simplified Lambert solver | ✅ Done | v2.20 |
+| `sampleTransferOrbit` — Keplerian arc sampling | ✅ Done | v2.20 |
+| Curved trajectory rendering in main canvas | ✅ Done | v2.29 |
+| Hohmann mode toggle in travel planner | ✅ Done | v2.30 |
+| Gravity assist multi-leg chains | ✅ Done | v2.24 |
+
 ## Open Questions
 
 1. Should we support **bi-elliptic transfers**? (Three-impulse, sometimes cheaper than Hohmann for large r2/r1)

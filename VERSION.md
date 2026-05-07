@@ -134,6 +134,11 @@ The rebuilt `dist/` will produce the same version string (assuming the working t
 
 | Date | Version | Note |
 |---|---|---|
+| 2026-05-08 | 2.30 | Curved Lambert arcs; travel mode toggle (delta-v vs hohmann); removed accel/brachistochrone |
+| 2026-05-08 | 2.29 | Curved Lambert trajectory drawing for direct transfers |
+| 2026-05-08 | 2.28 | Show travel timeline for all routes (possible + impossible) |
+| 2026-05-08 | 2.27 | Fix travel timeline playback — auto-pause, reverse, speed isolation |
+| 2026-05-04 | 2.26 | Barycenter view (FRD-067), multi-star orbit rules, gravity assist chains |
 | 2026-04-20 | 1.02 | FRD-048: Delta-V Calculator & Orbital Travel Planner spec |
 | 2026-04-20 | 1.01 | FRD-047: PWA + 0.01 version tracking introduced |
 | 2026-04-20 | 1.1.x | FRD-046: Save Page + System Editor (M1-M2) |

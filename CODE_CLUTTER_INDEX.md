@@ -14,7 +14,7 @@
 | Location | Lines | Notes |
 |----------|-------|-------|
 | `src/renderer.ts:273-276` | `computeBodyFrames` first pass | L1 bodies, uses `originX, originY, zoom` |
-| `src/renderer.ts:413-414` | `screenPosAtTime` (inside `drawTravelPlannerOverlays`) | L1 bodies, uses `starOriginX, starOriginY, camera.zoom` |
+| `src/renderer.ts:~540` | `screenPosAtTime` (module-level, extracted v2.29) | L1 bodies, uses `starOriginX, starOriginY, camera.zoom` ✅ **Extracted** |
 | `src/travelPlanner.ts:91-94` | `getBodyScreenPos` | L1 bodies, uses `originX, originY, camera.zoom` |
 | `src/gravityAssistDraw.ts:329-332` | `bodyScreenPosAt` | L1 bodies, uses `originX, originY, camera.zoom` |
 

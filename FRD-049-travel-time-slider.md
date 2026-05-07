@@ -335,6 +335,6 @@ function drawSpacecraft(ctx, plan, travelDayOffset, allBodies, state) {
 
 ## 10. Open Questions
 
-1. **True ballistic arc vs linear interpolation:** For v1 we lerp. A future version could solve the Lambert problem for a visually curved transfer trajectory.
+1. ~~True ballistic arc vs linear interpolation:~~ ✅ **FIXED in v2.29** — `drawCurvedTrajectory` uses `solveLambert` + `sampleTransferOrbit` to draw real curved arcs.
 2. **Mid-course correction burns:** Should the slider allow plotting correction burns (e.g. "day 20, burn 0.5 km/s")? Deferred to v1.1.
 3. **Multiple legs:** If a route has a refuelling stop, the timeline would need multiple segments. Deferred until multi-leg journeys are spec'd.

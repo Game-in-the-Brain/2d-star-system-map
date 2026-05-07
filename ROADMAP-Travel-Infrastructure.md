@@ -9,13 +9,15 @@
 
 Before building new features, fix the broken foundations discovered in the travel system audit.
 
-| Item | File | Bug | Impact |
-|------|------|-----|--------|
-| Fix SOI geometry | `travelCalc.ts` | All bodies assumed collinear on x-axis | SOI detours are wrong for any non-zero orbital angle |
-| Fix period for non-solar stars | `soiChecker.ts` | `originPeriod` ignores `starMassSolar` | Clear-window search is wrong for K/M dwarfs and giant stars |
-| Unify travel UIs | `travelPlanner.ts` + `travelPanel.ts` | Two separate systems share no state | User selects bodies in sidebar, opens floating panel → selections lost |
-| Reconcile travel models | `travelPhysics.ts` | `TravelPlan` mixes brachistochrone + constant-velocity range models | Arrival window "optimistic/pessimistic" is a UX fudge, not physics |
-| Cache L1 sort in renderer | `renderer.ts` | `screenPosAtTime` re-sorts on every call | O(N log N) per moon per frame = unnecessary perf hit |
+| Item | File | Bug | Impact | Status |
+|------|------|-----|--------|--------|
+| Fix SOI geometry | `travelCalc.ts` | All bodies assumed collinear on x-axis | SOI detours are wrong for any non-zero orbital angle | 🔄 Pending |
+| Fix period for non-solar stars | `soiChecker.ts` | `originPeriod` ignores `starMassSolar` | Clear-window search is wrong for K/M dwarfs and giant stars | 🔄 Pending |
+| Unify travel UIs | `travelPlanner.ts` + `travelPanel.ts` | Two separate systems share no state | User selects bodies in sidebar, opens floating panel → selections lost | ✅ **FIXED v2.07** — unified in sidebar |
+| Reconcile travel models | `travelPhysics.ts` | `TravelPlan` mixed brachistochrone + budget models | Confusing UX | ✅ **FIXED v2.30** — travel mode toggle (delta-v vs hohmann); brachistochrone removed |
+| Cache L1 sort in renderer | `renderer.ts` | `screenPosAtTime` re-sorts on every call | O(N log N) per moon per frame = unnecessary perf hit | ✅ **FIXED v2.29** — `screenPosAtTime` extracted to module level |
+| Travel timeline conflict | `travelPlanner.ts` | `tickTravelTimeline` overwrites `simDayOffset` while main loop also advances it | Race condition, animation stutter | ✅ **FIXED v2.27** — auto-pause, independent speed, reverse |
+| Straight-line chords | `renderer.ts` | `drawDirectTrajectory` lerps screen pixels | Ship flies through star | ✅ **FIXED v2.29** — `drawCurvedTrajectory` uses Lambert arcs |
 
 **Estimated effort**: 2–3 days  
 **Deliverable**: All existing travel features work correctly for angled orbits and non-solar-mass stars.
@@ -26,17 +28,17 @@ Before building new features, fix the broken foundations discovered in the trave
 
 Replace the straight-line-chord approximation with real patched-conic orbital mechanics.
 
-### FRD-063: Gravity Assists & Slingshot Calculator
+### FRD-063: Gravity Assists & Slingshot Calculator — ✅ DONE
 - Model hyperbolic flyby through a planet's SOI
 - Calculate delta-V change from gravity assist (Vinfinity in → Vinfinity out, rotated by turning angle)
 - Allow user to chain assists: Earth → Venus → Mercury, or Earth → Mars → Jupiter
 - Visualize assist trajectories on canvas (hyperbolic arcs within SOI)
 
-### FRD-065: Hohmann Transfer & Lambert Solver
-- **Hohmann**: Two-impulse coplanar transfer between circular orbits. Draw the transfer ellipse.
-- **Lambert**: Given departure/arrival positions and time-of-flight, solve for the orbital transfer. Essential for non-Hohmann windows and gravity-assist chains.
-- Display transfer orbit on canvas (elliptical arc, not straight chord)
-- Show departure burn vector and arrival capture burn vector
+### FRD-065: Hohmann Transfer & Lambert Solver — ✅ DONE
+- **Hohmann**: Two-impulse coplanar transfer between circular orbits. Draw the transfer ellipse. ✅ v2.20
+- **Lambert**: Given departure/arrival positions and time-of-flight, solve for the orbital transfer. ✅ v2.20
+- Display transfer orbit on canvas (elliptical arc, not straight chord) ✅ v2.29
+- Show departure burn vector and arrival capture burn vector 🔄 Pending
 
 ### FRD-068: Patched Conic Trajectory Integration
 - Propagate spacecraft state through multiple SOIs
