@@ -4,6 +4,7 @@ import { logScaleDistance, resetCamera } from './camera';
 import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPositionAU, rocheLimitKm } from './travelPhysics';
 import { tickTravelTimeline } from './travelPlanner';
 import { drawGravityAssistTrajectory, generateRealWaypoints } from './gravityAssistDraw';
+import { solveLambert, sampleTransferOrbit } from './lambertSolver';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -325,6 +326,12 @@ function computeBodyFrames(
   return frames;
 }
 
+// Constants for Lambert solve (mirrored from patchedConic.ts)
+const AU_TO_M = 1.496e11;
+const DAY_TO_S = 86400;
+const SOLAR_MU_M3S2 = 1.32712440018e20;
+const SOLAR_MU_AU3S2 = SOLAR_MU_M3S2 / Math.pow(AU_TO_M, 3);
+
 function drawDirectTrajectory(
   ctx: CanvasRenderingContext2D,
   departurePos: { x: number; y: number },
@@ -388,6 +395,185 @@ function drawDirectTrajectory(
   ctx.restore();
 }
 
+/**
+ * Draw a curved Lambert arc between origin and destination.
+ * Falls back to a straight chord if the Lambert solve fails.
+ */
+function drawCurvedTrajectory(
+  ctx: CanvasRenderingContext2D,
+  state: AppState,
+  originId: string,
+  destId: string,
+  starMassSolar: number,
+  departureDay: number,
+  arrivalDay: number,
+  progress: number,
+  pathColor: string,
+  isPossible: boolean
+): void {
+  const origin = state.bodies.find(b => b.id === originId);
+  const dest = state.bodies.find(b => b.id === destId);
+  if (!origin || !dest) {
+    // Fallback to chord if bodies missing
+    const dPos = screenPosAtTime(state, originId, departureDay);
+    const aPos = screenPosAtTime(state, destId, arrivalDay);
+    if (dPos && aPos) drawDirectTrajectory(ctx, dPos, aPos, progress, pathColor, isPossible);
+    return;
+  }
+
+  // Heliocentric positions in AU
+  const r1 = getBodyPositionAU(origin, departureDay, state.bodies);
+  const r2 = getBodyPositionAU(dest, arrivalDay, state.bodies);
+
+  const mu = SOLAR_MU_AU3S2 * starMassSolar;
+  const dt = (arrivalDay - departureDay) * DAY_TO_S;
+
+  const lambert = solveLambert(r1, r2, dt, mu, true);
+  if (!lambert) {
+    const dPos = screenPosAtTime(state, originId, departureDay);
+    const aPos = screenPosAtTime(state, destId, arrivalDay);
+    if (dPos && aPos) drawDirectTrajectory(ctx, dPos, aPos, progress, pathColor, isPossible);
+    return;
+  }
+
+  // Sample orbit in AU space
+  const orbitPointsAU = sampleTransferOrbit(r1, lambert.v1, r2, mu, 96);
+
+  // Convert AU → screen pixels using same log-scale as renderer
+  const { camera, width, height } = state;
+  const starOriginX = width / 2 - camera.x * camera.zoom;
+  const starOriginY = height / 2 - camera.y * camera.zoom;
+
+  const orbitPointsScreen = orbitPointsAU.map(p => {
+    const rAU = Math.hypot(p.x, p.y);
+    const theta = Math.atan2(p.y, p.x);
+    const distPx = rAU > 0 ? logScaleDistance(rAU, 80) * camera.zoom : 0;
+    return {
+      x: starOriginX + Math.cos(theta) * distPx,
+      y: starOriginY + Math.sin(theta) * distPx,
+    };
+  });
+
+  if (orbitPointsScreen.length < 2) return;
+
+  ctx.save();
+
+  // Find ship position along the curve based on progress
+  const pathIndex = progress * (orbitPointsScreen.length - 1);
+  const idx = Math.floor(pathIndex);
+  const frac = pathIndex - idx;
+  const pCurrent = orbitPointsScreen[idx];
+  const pNext = orbitPointsScreen[Math.min(idx + 1, orbitPointsScreen.length - 1)];
+  const shipX = pCurrent.x + (pNext.x - pCurrent.x) * frac;
+  const shipY = pCurrent.y + (pNext.y - pCurrent.y) * frac;
+
+  // Tangent angle for spacecraft chevron
+  const pPrev = orbitPointsScreen[Math.max(idx - 1, 0)];
+  const pAfter = orbitPointsScreen[Math.min(idx + 2, orbitPointsScreen.length - 1)];
+  const angle = Math.atan2(pAfter.y - pPrev.y, pAfter.x - pPrev.x);
+
+  // Full planned path (faint background)
+  ctx.strokeStyle = `rgba(${pathColor},0.15)`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(orbitPointsScreen[0].x, orbitPointsScreen[0].y);
+  for (let i = 1; i < orbitPointsScreen.length; i++) {
+    ctx.lineTo(orbitPointsScreen[i].x, orbitPointsScreen[i].y);
+  }
+  ctx.stroke();
+
+  // Travelled segment (solid, brighter) — draw up to ship position
+  ctx.strokeStyle = `rgba(${pathColor},0.9)`;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(orbitPointsScreen[0].x, orbitPointsScreen[0].y);
+  for (let i = 1; i <= idx; i++) {
+    ctx.lineTo(orbitPointsScreen[i].x, orbitPointsScreen[i].y);
+  }
+  ctx.lineTo(shipX, shipY);
+  ctx.stroke();
+
+  // Remaining segment (dashed)
+  if (idx < orbitPointsScreen.length - 1) {
+    ctx.strokeStyle = `rgba(${pathColor},0.4)`;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(shipX, shipY);
+    for (let i = idx + 1; i < orbitPointsScreen.length; i++) {
+      ctx.lineTo(orbitPointsScreen[i].x, orbitPointsScreen[i].y);
+    }
+    ctx.stroke();
+  }
+
+  // Arrival marker at final point
+  const lastPt = orbitPointsScreen[orbitPointsScreen.length - 1];
+  ctx.setLineDash([]);
+  ctx.strokeStyle = isPossible ? 'rgba(251,146,60,0.8)' : 'rgba(239,68,68,0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(lastPt.x - 6, lastPt.y);
+  ctx.lineTo(lastPt.x + 6, lastPt.y);
+  ctx.moveTo(lastPt.x, lastPt.y - 6);
+  ctx.lineTo(lastPt.x, lastPt.y + 6);
+  ctx.stroke();
+
+  // Spacecraft chevron at current position
+  ctx.fillStyle = isPossible ? 'rgba(251,146,60,0.95)' : 'rgba(239,68,68,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(shipX + Math.cos(angle) * 6, shipY + Math.sin(angle) * 6);
+  ctx.lineTo(shipX + Math.cos(angle + 2.5) * 4, shipY + Math.sin(angle + 2.5) * 4);
+  ctx.lineTo(shipX + Math.cos(angle - 2.5) * 4, shipY + Math.sin(angle - 2.5) * 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Compute a body's screen position at an arbitrary day offset.
+ * Mirrors computeBodyFrames logic but for a single body at a chosen time.
+ */
+function screenPosAtTime(
+  state: AppState,
+  bodyId: string,
+  dayOffset: number
+): { x: number; y: number } | null {
+  const { camera, bodies, width, height } = state;
+  const starOriginX = width / 2 - camera.x * camera.zoom;
+  const starOriginY = height / 2 - camera.y * camera.zoom;
+
+  const body = bodies.find(b => b.id === bodyId);
+  if (!body) return null;
+  if (!body.parentId) {
+    const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+    const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * camera.zoom : 0;
+    return { x: starOriginX + Math.cos(angle) * distPx, y: starOriginY + Math.sin(angle) * distPx };
+  }
+  const parent = bodies.find(b => b.id === body.parentId);
+  if (!parent) return null;
+  const parentPos = screenPosAtTime(state, parent.id, dayOffset);
+  if (!parentPos) return null;
+  const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
+  const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0;
+  const parentDistPx = logScaleDistance(parent.distanceAU, 80) * camera.zoom;
+  const l1DistsSorted = bodies
+    .filter(b => !b.parentId && b.distanceAU > 0)
+    .map(b => logScaleDistance(b.distanceAU, 80) * camera.zoom)
+    .sort((a, b) => a - b);
+  const parentLIdx = l1DistsSorted.findIndex(d => Math.abs(d - parentDistPx) < 0.5);
+  let gapPx = parentDistPx * 0.5;
+  if (parentLIdx >= 0) {
+    const innerG = parentLIdx > 0 ? parentDistPx - l1DistsSorted[parentLIdx - 1] : parentDistPx;
+    const outerG = parentLIdx < l1DistsSorted.length - 1 ? l1DistsSorted[parentLIdx + 1] - parentDistPx : parentDistPx;
+    gapPx = Math.min(innerG, outerG);
+  }
+  const maxMoonDist = Math.min(parentDistPx * 0.25, gapPx * 0.38);
+  const moonDistPx = Math.max(4, Math.min(maxMoonDist, rawMoonDist));
+  return { x: parentPos.x + Math.cos(angle) * moonDistPx, y: parentPos.y + Math.sin(angle) * moonDistPx };
+}
+
 function drawTravelPlannerOverlays(
   ctx: CanvasRenderingContext2D,
   state: AppState,
@@ -402,39 +588,6 @@ function drawTravelPlannerOverlays(
   // Star position on screen (all orbits are centred here)
   const starOriginX = width / 2 - camera.x * camera.zoom;
   const starOriginY = height / 2 - camera.y * camera.zoom;
-
-  // Compute a body's screen position at any arbitrary day offset.
-  // Mirrors computeBodyFrames logic but for a single body at a chosen time.
-  function screenPosAtTime(bodyId: string, dayOffset: number): { x: number; y: number } | null {
-    const body = bodies.find(b => b.id === bodyId);
-    if (!body) return null;
-    if (!body.parentId) {
-      const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
-      const distPx = body.distanceAU > 0 ? logScaleDistance(body.distanceAU, 80) * camera.zoom : 0;
-      return { x: starOriginX + Math.cos(angle) * distPx, y: starOriginY + Math.sin(angle) * distPx };
-    }
-    const parent = bodies.find(b => b.id === body.parentId);
-    if (!parent) return null;
-    const parentPos = screenPosAtTime(parent.id, dayOffset);
-    if (!parentPos) return null;
-    const angle = body.angle + (body.periodDays > 0 ? (2 * Math.PI * dayOffset) / body.periodDays : 0);
-    const rawMoonDist = body.moonOrbitAU ? body.moonOrbitAU * 200 * camera.zoom : 0; // 200 = visual scale factor
-    const parentDistPx = logScaleDistance(parent.distanceAU, 80) * camera.zoom;
-    const l1DistsSorted = bodies
-      .filter(b => !b.parentId && b.distanceAU > 0)
-      .map(b => logScaleDistance(b.distanceAU, 80) * camera.zoom)
-      .sort((a, b) => a - b);
-    const parentLIdx = l1DistsSorted.findIndex(d => Math.abs(d - parentDistPx) < 0.5);
-    let gapPx = parentDistPx * 0.5;
-    if (parentLIdx >= 0) {
-      const innerG = parentLIdx > 0 ? parentDistPx - l1DistsSorted[parentLIdx - 1] : parentDistPx;
-      const outerG = parentLIdx < l1DistsSorted.length - 1 ? l1DistsSorted[parentLIdx + 1] - parentDistPx : parentDistPx;
-      gapPx = Math.min(innerG, outerG);
-    }
-    const maxMoonDist = Math.min(parentDistPx * 0.25, gapPx * 0.38);
-    const moonDistPx = Math.max(4, Math.min(maxMoonDist, rawMoonDist));
-    return { x: parentPos.x + Math.cos(angle) * moonDistPx, y: parentPos.y + Math.sin(angle) * moonDistPx };
-  }
 
   // Current screen position of a body (from precomputed frames)
   function currentScreenPos(bodyId: string | null): { x: number; y: number } | null {
@@ -522,8 +675,8 @@ function drawTravelPlannerOverlays(
       ? departureDay + plan.pessimisticArrivalDays
       : departureDay + 365;
 
-    const departurePos = screenPosAtTime(tp.originId, departureDay);
-    const arrivalPos = screenPosAtTime(tp.destinationId, arrivalDay);
+    const departurePos = screenPosAtTime(state, tp.originId, departureDay);
+    const arrivalPos = screenPosAtTime(state, tp.destinationId, arrivalDay);
 
     if (departurePos && arrivalPos) {
       const totalDays = arrivalDay - departureDay;
@@ -544,12 +697,12 @@ function drawTravelPlannerOverlays(
         if (waypoints.length > 0) {
           drawGravityAssistTrajectory(ctx, departurePos, arrivalPos, waypoints, progress, totalDays);
         } else {
-          // No viable assists found — fall back to direct chord
-          drawDirectTrajectory(ctx, departurePos, arrivalPos, progress, pathColor, isPossible);
+          // No viable assists found — fall back to curved Lambert arc
+          drawCurvedTrajectory(ctx, state, tp.originId, tp.destinationId, starMassSolar, departureDay, arrivalDay, progress, pathColor, isPossible);
         }
       } else {
-        // Standard direct chord
-        drawDirectTrajectory(ctx, departurePos, arrivalPos, progress, pathColor, isPossible);
+        // Standard direct transfer — draw curved Lambert arc
+        drawCurvedTrajectory(ctx, state, tp.originId, tp.destinationId, starMassSolar, departureDay, arrivalDay, progress, pathColor, isPossible);
       }
     }
   } else {

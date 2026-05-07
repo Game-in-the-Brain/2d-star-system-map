@@ -230,13 +230,11 @@ export interface TravelPlannerState {
   isActive: boolean;
   timeline: TravelTimelineState;
 
-  // Unified travel calculator state (merged from floating panel)
-  routingMode: RoutingMode;
-  accelG: number;
+  // Travel model selection
+  travelMode: 'delta-v' | 'hohmann';
   useGravityAssists: boolean;
   useMultiLegChains: boolean;  // FRD-063 §4: opt-in multi-leg gravity assist chains
   deadlineDays: number | null; // FRD-064: max transit time deadline
-  lastCalcResult: TravelResult | null;
 }
 
 // FRD-060 §30: SOI-Safe Routing

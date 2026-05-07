@@ -1,6 +1,5 @@
-import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelineState, Point, TravelBody } from './types';
+import type { AppState, SceneBody, TravelPlan, TravelPlannerState, TravelTimelineState, Point } from './types';
 import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './travelPhysics';
-import { toTravelBody, calculateTravel, brachistochroneTimeDays } from './travelCalc';
 import { patchedConicTransfer } from './patchedConic';
 import { findAssistOpportunities } from './gravityAssistPhysics';
 import { logScaleDistance } from './camera';
@@ -28,12 +27,52 @@ export function createTravelPlannerState(): TravelPlannerState {
     lastPlan: null,
     isActive: false,
     timeline: createTimelineState(),
-    routingMode: 'soi-safe',
-    accelG: 0.1,
+    travelMode: 'delta-v',
     useGravityAssists: false,
     useMultiLegChains: false,
     deadlineDays: null,
-    lastCalcResult: null,
+  };
+}
+
+/**
+ * Build a TravelPlan from a patched-conic Hohmann transfer result so the
+ * timeline can drive animation with Hohmann timing instead of the delta-V
+ * budget model.
+ */
+function buildHohmannTravelPlan(
+  origin: SceneBody,
+  destination: SceneBody,
+  hohmann: NonNullable<ReturnType<typeof patchedConicTransfer>>,
+  budget: number,
+  departureOffset: number
+): TravelPlan {
+  const escapeOriginKms = hohmann.departureDeltaVKms;
+  const captureDestKms = hohmann.arrivalDeltaVKms;
+  const totalCostKms = hohmann.totalDeltaVKms;
+  const excessDeltaVKms = Math.round((budget - totalCostKms) * 100) / 100;
+
+  let failureReason: string | undefined;
+  if (budget < escapeOriginKms) {
+    failureReason = `Insufficient ΔV to escape ${origin.label} (${escapeOriginKms.toFixed(2)} km/s required).`;
+  } else if (budget < totalCostKms) {
+    failureReason = `Hohmann transfer requires ${totalCostKms.toFixed(2)} km/s; budget is ${budget.toFixed(2)} km/s.`;
+  }
+
+  return {
+    originId: origin.id,
+    destinationId: destination.id,
+    departureDayOffset: departureOffset,
+    deltaVBudgetKms: budget,
+    escapeOriginKms,
+    captureDestKms,
+    excessDeltaVKms,
+    optimisticArrivalDays: hohmann.timeOfFlightDays,
+    pessimisticArrivalDays: hohmann.timeOfFlightDays * 1.05,
+    synodicPeriodDays: 0, // not used for Hohmann
+    nextWindowDayOffset: departureOffset,
+    isPossible: budget >= totalCostKms,
+    failureReason,
+    totalCostKms,
   };
 }
 
@@ -200,7 +239,6 @@ export function initTravelPlanner(state: AppState): void {
   const travelOrigin = document.getElementById('travel-origin');
   const travelDestination = document.getElementById('travel-destination');
   const deltaVInput = document.getElementById('travel-delta-v') as HTMLInputElement | null;
-  const accelInput = document.getElementById('travel-accel') as HTMLInputElement | null;
   const deadlineInput = document.getElementById('travel-deadline') as HTMLInputElement | null;
   const useSimDateCheck = document.getElementById('travel-use-sim-date') as HTMLInputElement | null;
   const departureDateInput = document.getElementById('travel-departure-date') as HTMLInputElement | null;
@@ -211,7 +249,8 @@ export function initTravelPlanner(state: AppState): void {
   const distanceContext = document.getElementById('travel-distance-context');
 
   // Toggles
-  const soiSafeCheck = document.getElementById('travel-soi-safe') as HTMLInputElement | null;
+  const travelModeDeltaV = document.getElementById('travel-mode-delta-v') as HTMLInputElement | null;
+  const travelModeHohmann = document.getElementById('travel-mode-hohmann') as HTMLInputElement | null;
   const gravityAssistCheck = document.getElementById('travel-gravity-assists') as HTMLInputElement | null;
   const multiLegCheck = document.getElementById('travel-multi-leg') as HTMLInputElement | null;
   const multiLegRow = document.getElementById('travel-multi-leg-row');
