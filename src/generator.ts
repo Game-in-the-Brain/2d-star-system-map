@@ -10,14 +10,23 @@ const CLASS_LUM: Record<string, [number, number]> = {
   G: [0.6, 1.5], K: [0.08, 0.6], M: [0.001, 0.08],
 };
 
+/** Hierarchical-stability factor for nested binaries: a_outer ≥ 3 × a_inner. */
+const HIERARCHICAL_RATIO_MIN = 3;
+/** Max attempts to satisfy the hierarchical-stability constraint. */
+const HIERARCHICAL_REROLL_MAX = 10;
+
 function rollD6(): number { return Math.floor(Math.random() * 6) + 1; }
 function roll2D6(): number { return rollD6() + rollD6(); }
 function roll3D6(): number { return rollD6() + rollD6() + rollD6(); }
+function roll3D3(): number { return rollD6() + rollD6() + rollD6() - 3; } // 0–15
 function randRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function round(value: number, decimals: number = 2): number {
+  return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
 }
 
 function generateStar(): { class: string; grade: number; mass: number; luminosity: number } {
@@ -93,11 +102,174 @@ function gasClass(): number {
   return 5;
 }
 
+// =====================
+// Multi-Star Helpers (ported from Mneme CE World Generator)
+// =====================
+
+/** Kepler's third law in solar units: P² = a³ / (m_total). */
+function keplerPeriodYears(semiMajorAxisAU: number, totalMassSolar: number): number {
+  if (totalMassSolar <= 0) return 0;
+  return Math.sqrt(Math.pow(semiMajorAxisAU, 3) / totalMassSolar);
+}
+
+/** The "gear ratio" — each star wobbles in a circle around the shared barycenter. */
+function computeBarycenter(semiMajorAxisAU: number, primaryMass: number, secondaryMass: number) {
+  const total = primaryMass + secondaryMass;
+  if (total <= 0) return { rPrimaryAU: 0, rSecondaryAU: 0 };
+  return {
+    rPrimaryAU: round(semiMajorAxisAU * (secondaryMass / total), 2),
+    rSecondaryAU: round(semiMajorAxisAU * (primaryMass / total), 2),
+  };
+}
+
+/** Wide companion separation: 3D3 × heliopause × (1 + e), floor 3× heliopause×(1+e). */
+function getWideCompanionOrbitDistance(d3d3Roll: number, heliopauseAU: number, eccentricity: number): number {
+  const safeRoll = Math.max(d3d3Roll, 3);
+  return round(safeRoll * heliopauseAU * (1 + eccentricity), 1);
+}
+
+interface StarLeaf {
+  kind: 'star';
+  starId: string;
+  totalMass: number;
+}
+
+interface BinaryNode {
+  kind: 'binary';
+  primary: OrbitNode;
+  secondary: OrbitNode;
+  semiMajorAxisAU: number;
+  eccentricity: number;
+  inclinationDeg: number;
+  totalMass: number;
+  rPrimaryAU: number;
+  rSecondaryAU: number;
+  periodYears: number;
+}
+
+type OrbitNode = StarLeaf | BinaryNode;
+
+function makeStarLeaf(starId: string, totalMass: number): StarLeaf {
+  return { kind: 'star', starId, totalMass };
+}
+
+function rollEccentricity(): number {
+  return (rollD6() - 1) / 10; // 0.0 – 0.5
+}
+
+/** Return the maximum semi-major axis among all BinaryNodes inside the subtree. */
+function maxInnerSemiMajorAxis(node: OrbitNode): number {
+  if (node.kind === 'star') return 0;
+  return Math.max(
+    node.semiMajorAxisAU,
+    maxInnerSemiMajorAxis(node.primary),
+    maxInnerSemiMajorAxis(node.secondary),
+  );
+}
+
+function buildBinary(inner: OrbitNode, outerLeaf: StarLeaf, parentHeliopauseAU: number): BinaryNode {
+  const innerCeiling = maxInnerSemiMajorAxis(inner);
+  let semiMajorAxisAU = 0;
+  let eccentricity = 0;
+  for (let attempt = 0; attempt < HIERARCHICAL_REROLL_MAX; attempt++) {
+    const rolled = roll3D3();
+    eccentricity = rollEccentricity();
+    semiMajorAxisAU = getWideCompanionOrbitDistance(rolled, parentHeliopauseAU, eccentricity);
+    if (semiMajorAxisAU >= HIERARCHICAL_RATIO_MIN * innerCeiling) break;
+  }
+
+  const totalMass = inner.totalMass + outerLeaf.totalMass;
+  const { rPrimaryAU, rSecondaryAU } = computeBarycenter(semiMajorAxisAU, inner.totalMass, outerLeaf.totalMass);
+
+  return {
+    kind: 'binary',
+    primary: inner,
+    secondary: outerLeaf,
+    semiMajorAxisAU,
+    eccentricity,
+    inclinationDeg: (rollD6() - 1) * 30,
+    totalMass,
+    rPrimaryAU,
+    rSecondaryAU,
+    periodYears: round(keplerPeriodYears(semiMajorAxisAU, totalMass), 2),
+  };
+}
+
+function buildOrbitTree(primaryMass: number, companions: { mass: number; id: string }[], heliopauseAU: number): OrbitNode {
+  let root: OrbitNode = makeStarLeaf('primary', primaryMass);
+  for (const companion of companions) {
+    const leaf = makeStarLeaf(companion.id, companion.mass);
+    root = buildBinary(root, leaf, heliopauseAU);
+  }
+  return root;
+}
+
+function buildBarycenterView(root: OrbitNode, stars: { id: string; class: string; grade: number; mass: number }[]): StarSystem['barycenterView'] {
+  const starMap = new Map(stars.map(s => [s.id, s]));
+  const results: NonNullable<StarSystem['barycenterView']>['stars'] = [];
+
+  function hashString(str: string): number {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  function makeRng(seed: number): () => number {
+    let s = seed;
+    return () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+  }
+
+  const baseSeed = hashString(stars.map(s => s.id).join('|'));
+  let binaryCounter = 0;
+
+  function walk(node: OrbitNode, parentX: number, parentY: number, outermostBinary: BinaryNode | null): void {
+    if (node.kind === 'star') {
+      const star = starMap.get(node.starId);
+      if (!star) return;
+      const dx = parentX;
+      const dy = parentY;
+      const distanceAU = round(Math.sqrt(dx * dx + dy * dy), 2);
+      const angleRad = Math.atan2(dy, dx);
+      results.push({
+        starId: node.starId,
+        isPrimary: node.starId === 'primary',
+        class: star.class,
+        grade: star.grade,
+        mass: star.mass,
+        distanceAU,
+        periodYears: outermostBinary ? outermostBinary.periodYears : 0,
+        eccentricity: outermostBinary ? outermostBinary.eccentricity : 0,
+        inclinationDeg: outermostBinary ? outermostBinary.inclinationDeg : 0,
+        angleRad: round(angleRad, 4),
+      });
+      return;
+    }
+    const rng = makeRng(baseSeed + binaryCounter++);
+    const angle = rng() * Math.PI * 2;
+    const px = parentX - node.rPrimaryAU * Math.cos(angle);
+    const py = parentY - node.rPrimaryAU * Math.sin(angle);
+    const sx = parentX + node.rSecondaryAU * Math.cos(angle);
+    const sy = parentY + node.rSecondaryAU * Math.sin(angle);
+    const binaryForChildren = outermostBinary ?? node;
+    walk(node.primary, px, py, binaryForChildren);
+    walk(node.secondary, sx, sy, binaryForChildren);
+  }
+
+  walk(root, 0, 0, null);
+  return { stars: results };
+}
+
 export function generateRandomSystem(): MapPayload {
   const star = generateStar();
   const sqrtL = Math.sqrt(star.luminosity);
+  const heliopauseAU = round(sqrtL * 120, 1);
 
-  // Generate companion stars (0–2)
+  // Generate companion stars (0–2) with heliopause-based distances
   const companionCount = Math.max(0, roll2D6() - 8);
   const companions: StarSystem['companionStars'] = [];
   for (let i = 0; i < companionCount; i++) {
@@ -106,8 +278,39 @@ export function generateRandomSystem(): MapPayload {
       class: c.class,
       grade: c.grade,
       mass: c.mass,
-      orbitDistance: randRange(sqrtL * 20, sqrtL * 200),
+      // orbitDistance will be overwritten by the tree below with heliopause-based values
+      orbitDistance: 0,
     });
+  }
+
+  // Build hierarchical orbit tree and compute heliopause-based separations
+  let barycenterView: StarSystem['barycenterView'];
+  if (companions.length > 0) {
+    const companionIds = companions.map((_, i) => `companion-${i}`);
+    const tree = buildOrbitTree(
+      star.mass,
+      companions.map((c, i) => ({ mass: c.mass, id: companionIds[i] })),
+      heliopauseAU,
+    );
+
+    // Overlay tree separations back onto companions
+    let cursor: OrbitNode = tree;
+    const separations: number[] = [];
+    while (cursor && cursor.kind === 'binary') {
+      separations.unshift(cursor.semiMajorAxisAU);
+      if (cursor.primary.kind !== 'binary') break;
+      cursor = cursor.primary;
+    }
+    for (let i = 0; i < companions.length && i < separations.length; i++) {
+      companions[i].orbitDistance = separations[i];
+    }
+
+    // Build barycenter view
+    const allStars = [
+      { id: 'primary', class: star.class, grade: star.grade, mass: star.mass },
+      ...companions.map((c, i) => ({ id: companionIds[i], class: c.class, grade: c.grade, mass: c.mass })),
+    ];
+    barycenterView = buildBarycenterView(tree, allStars);
   }
 
   // Generate disks
@@ -161,62 +364,6 @@ export function generateRandomSystem(): MapPayload {
   } else if (dwarfs.length > 0) {
     const d = dwarfs[Math.floor(Math.random() * dwarfs.length)];
     mainWorld = { type: 'Dwarf', distanceAU: d.distanceAU, massEM: d.mass };
-  }
-
-  // FRD-067: compute barycenter view for random multi-star systems.
-  // Each companion gets a random orbital phase around the primary.
-  // The system barycenter is the mass-weighted average of all star positions.
-  let barycenterView: StarSystem['barycenterView'];
-  if (companions.length > 0) {
-    const totalMass = star.mass + companions.reduce((s, c) => s + c.mass, 0);
-
-    // Assign random angles and compute Cartesian positions relative to primary
-    const companionAngles = companions.map(() => Math.random() * Math.PI * 2);
-    const companionPositions = companions.map((c, i) => ({
-      x: (c.orbitDistance ?? 0) * Math.cos(companionAngles[i]),
-      y: (c.orbitDistance ?? 0) * Math.sin(companionAngles[i]),
-      mass: c.mass,
-    }));
-
-    // Barycenter offset from primary (mass-weighted average)
-    const baryX = companionPositions.reduce((s, p, i) => s + p.x * companions[i].mass, 0) / totalMass;
-    const baryY = companionPositions.reduce((s, p, i) => s + p.y * companions[i].mass, 0) / totalMass;
-
-    // Compute each star's polar coordinates relative to the barycenter
-    const primaryDist = Math.sqrt(baryX * baryX + baryY * baryY);
-    const primaryAngle = Math.atan2(-baryY, -baryX);
-
-    const baryStars = [
-      {
-        starId: 'primary',
-        isPrimary: true,
-        class: star.class,
-        grade: star.grade,
-        mass: star.mass,
-        distanceAU: Math.round(primaryDist * 100) / 100,
-        periodYears: 0,
-        eccentricity: 0,
-        inclinationDeg: randInt(0, 5) * 30,
-        angleRad: Math.round(primaryAngle * 100) / 100,
-      },
-      ...companions.map((c, i) => {
-        const dx = companionPositions[i].x - baryX;
-        const dy = companionPositions[i].y - baryY;
-        return {
-          starId: `companion-${i}`,
-          isPrimary: false,
-          class: c.class,
-          grade: c.grade,
-          mass: c.mass,
-          distanceAU: Math.round(Math.sqrt(dx * dx + dy * dy) * 100) / 100,
-          periodYears: 0,
-          eccentricity: 0,
-          inclinationDeg: randInt(0, 5) * 30,
-          angleRad: Math.round(Math.atan2(dy, dx) * 100) / 100,
-        };
-      }),
-    ];
-    barycenterView = { stars: baryStars };
   }
 
   const system: StarSystem = {
