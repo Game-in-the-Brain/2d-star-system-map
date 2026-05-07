@@ -40,7 +40,7 @@ export function createTravelPlannerState(): TravelPlannerState {
 // Called each animation frame from renderer.ts to advance the travel timeline.
 export function tickTravelTimeline(state: AppState, dt: number): void {
   const tp = state.travelPlanner;
-  if (!tp || !tp.timeline.isPlaying || !tp.lastPlan?.isPossible) return;
+  if (!tp || !tp.timeline.isPlaying || !tp.lastPlan) return;
 
   const plan = tp.lastPlan;
   const tl = tp.timeline;
@@ -517,17 +517,13 @@ export function initTravelPlanner(state: AppState): void {
       if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
     }
 
-    if (plan.isPossible) {
-      // Preserve existing travel offset when recalculating (e.g. toggling assists),
-      // but clamp to the new plan's bounds so we don't exceed arrival.
-      tp.timeline.travelDayOffset = Math.max(0, Math.min(tp.timeline.travelDayOffset, plan.pessimisticArrivalDays));
-      if (tp.timeline.pinnedDepartureDayOffset === null) {
-        tp.timeline.pinnedDepartureDayOffset = departureOffset;
-      }
-      showTimeline(plan);
-    } else {
-      hideTimeline();
+    // Show timeline for ALL calculated routes (possible or impossible) so the
+    // user can still scrub/animate the trajectory.  Only hide when no plan exists.
+    tp.timeline.travelDayOffset = Math.max(0, Math.min(tp.timeline.travelDayOffset, plan.pessimisticArrivalDays));
+    if (tp.timeline.pinnedDepartureDayOffset === null) {
+      tp.timeline.pinnedDepartureDayOffset = departureOffset;
     }
+    showTimeline(plan);
   }
 
   function clearSelection() {
@@ -735,11 +731,13 @@ export function initTravelPlanner(state: AppState): void {
   }
 
   function showTimeline(plan: TravelPlan) {
-    if (!timelineSection || !timelineSlider || !plan.isPossible) return;
+    if (!timelineSection || !timelineSlider) return;
     timelineSlider.max = String(Math.ceil(plan.pessimisticArrivalDays));
     timelineSlider.value = String(Math.round(tp.timeline.travelDayOffset));
     updateTimelineZones(plan);
-    if (dayCounter) dayCounter.textContent = `Day ${Math.round(tp.timeline.travelDayOffset)} / ${Math.round(plan.pessimisticArrivalDays)}`;
+    if (dayCounter) {
+      dayCounter.textContent = `Day ${Math.round(tp.timeline.travelDayOffset)} / ${Math.round(plan.pessimisticArrivalDays)}`;
+    }
     timelineSection.style.display = 'flex';
   }
 
