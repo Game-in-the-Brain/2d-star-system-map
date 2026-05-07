@@ -11,7 +11,7 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-W8GvkJTX.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-DqLitUaI.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Coiiow2t.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
@@ -344,6 +344,25 @@
               <div class="control-row" style="justify-content:center; gap:4px; flex-wrap:wrap; margin-top:2px;">
                 <button id="btn-cycler-animate" class="btn small" title="Animate cycler">▶ Orbit</button>
               </div>
+            </div>
+
+            <!-- Inertia Banks (FRD-071) -->
+            <div id="travel-inertia-section" class="travel-inertia-section" style="display:none;">
+              <div class="travel-timeline-header">
+                <span class="travel-result-label">Inertia Banks</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Tether Length (km):</span>
+                <input id="inertia-tether-length" type="number" value="100" min="10" max="100000" step="10" style="width:80px;" />
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Tip Velocity (km/s):</span>
+                <input id="inertia-tip-velocity" type="number" value="2.0" min="0.1" max="50" step="0.1" style="width:80px;" />
+              </div>
+              <div class="control-row" style="justify-content:center; gap:4px; flex-wrap:wrap; margin-top:2px;">
+                <button id="btn-place-inertia" class="btn small" title="Place bank at route midpoint">🏦 Place Bank</button>
+              </div>
+              <div id="inertia-bank-list" class="inertia-bank-list" style="margin-top:4px;"></div>
             </div>
           </div>
         </div>

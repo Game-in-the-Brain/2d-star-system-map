@@ -778,6 +778,62 @@ function drawTravelPlannerOverlays(
       ctx.restore();
     }
   }
+
+  // ── FRD-071: Inertia Banks (rotating tethers) ──
+  for (const bank of state.inertiaBanks) {
+    // Orbital position of the bank's center
+    const bankAngle = (2 * Math.PI * simDayOffset) / 365.25; // assume ~1yr orbit for simplicity
+    const bankDistPx = bank.orbitDistanceAU > 0
+      ? logScaleDistance(bank.orbitDistanceAU, 80) * camera.zoom
+      : 0;
+    const cx = starOriginX + Math.cos(bankAngle) * bankDistPx;
+    const cy = starOriginY + Math.sin(bankAngle) * bankDistPx;
+
+    // Tether rotation (spins much faster than orbital period)
+    const rotationAngle = (simDayOffset * 86400 / bank.rotationPeriodS) * 2 * Math.PI;
+
+    // Tether half-length in pixels (convert km to AU then to pixels)
+    const halfLenAU = (bank.tetherLengthKm / 2) / 1.496e8;
+    const halfLenPx = halfLenAU > 0 ? logScaleDistance(halfLenAU, 80) * camera.zoom : 0;
+
+    const x1 = cx + Math.cos(rotationAngle) * halfLenPx;
+    const y1 = cy + Math.sin(rotationAngle) * halfLenPx;
+    const x2 = cx - Math.cos(rotationAngle) * halfLenPx;
+    const y2 = cy - Math.sin(rotationAngle) * halfLenPx;
+
+    ctx.save();
+
+    // Tether line
+    ctx.strokeStyle = 'rgba(255, 200, 50, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // End masses
+    ctx.fillStyle = 'rgba(255, 200, 50, 0.9)';
+    ctx.beginPath();
+    ctx.arc(x1, y1, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x2, y2, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Central hub
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = 'rgba(255, 200, 50, 0.7)';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Bank ${bank.id}`, cx, cy - halfLenPx - 6);
+
+    ctx.restore();
+  }
 }
 
 function drawBody(

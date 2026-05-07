@@ -64,6 +64,7 @@ function generateTestState(system: ReturnType<typeof generateRandomSystem>): App
     lastMouseX: 0,
     lastMouseY: 0,
     viewMode: 'planetary',
+    inertiaBanks: [],
   };
 }
 

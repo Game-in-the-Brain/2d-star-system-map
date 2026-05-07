@@ -292,6 +292,13 @@ export function initTravelPlanner(state: AppState): void {
   const resCyclerEncounter = document.getElementById('res-cycler-encounter');
   const resCyclerStation = document.getElementById('res-cycler-station');
 
+  // FRD-071: Inertia Banks
+  const inertiaSection = document.getElementById('travel-inertia-section');
+  const inertiaTetherLength = document.getElementById('inertia-tether-length') as HTMLInputElement | null;
+  const inertiaTipVelocity = document.getElementById('inertia-tip-velocity') as HTMLInputElement | null;
+  const btnPlaceInertia = document.getElementById('btn-place-inertia') as HTMLButtonElement | null;
+  const inertiaBankList = document.getElementById('inertia-bank-list');
+
   function updatePanel() {
     const hasOrigin = tp.originId !== null;
     const hasDest = tp.destinationId !== null;
@@ -536,6 +543,7 @@ export function initTravelPlanner(state: AppState): void {
     }
     showTimeline(plan);
     displayCycler();
+    displayInertiaBanks();
   }
 
   function displayCycler() {
@@ -561,15 +569,38 @@ export function initTravelPlanner(state: AppState): void {
     }
   }
 
+  function displayInertiaBanks() {
+    if (!inertiaSection) return;
+    const hasRoute = tp.originId && tp.destinationId;
+    inertiaSection.style.display = hasRoute ? 'block' : 'none';
+
+    if (inertiaBankList) {
+      if (state.inertiaBanks.length === 0) {
+        inertiaBankList.innerHTML = '<div style="font-size:11px;color:#888;">No banks placed.</div>';
+      } else {
+        inertiaBankList.innerHTML = state.inertiaBanks.map(bank =>
+          `<div class="travel-result-row" style="font-size:11px;">` +
+          `<span class="travel-result-label">Bank ${bank.id}:</span>` +
+          `<span class="travel-result-value">${bank.orbitDistanceAU.toFixed(2)} AU, ` +
+          `${bank.tetherLengthKm} km, ${bank.tipVelocityKms.toFixed(1)} km/s</span>` +
+          `</div>`
+        ).join('');
+      }
+    }
+  }
+
   function clearSelection() {
     tp.originId = null;
     tp.destinationId = null;
     tp.lastPlan = null;
     tp.cyclerOrbit = null;
     tp.timeline = createTimelineState();
+    state.inertiaBanks = [];
     if (travelResults) travelResults.style.display = 'none';
     if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
     if (cyclerSection) cyclerSection.style.display = 'none';
+    if (inertiaSection) inertiaSection.style.display = 'none';
+    if (inertiaBankList) inertiaBankList.innerHTML = '';
     hideTimeline();
     updatePanel();
   }
@@ -637,6 +668,37 @@ export function initTravelPlanner(state: AppState): void {
 
   if (btnClear) {
     btnClear.addEventListener('click', clearSelection);
+  }
+
+  // FRD-071: Place Inertia Bank
+  if (btnPlaceInertia) {
+    btnPlaceInertia.addEventListener('click', () => {
+      if (!tp.originId || !tp.destinationId) return;
+      const originBody = state.bodies.find(b => b.id === tp.originId);
+      const destBody = state.bodies.find(b => b.id === tp.destinationId);
+      if (!originBody || !destBody) return;
+
+      const orbitAU = (originBody.distanceAU + destBody.distanceAU) / 2;
+      const lengthKm = parseFloat(inertiaTetherLength?.value ?? '100');
+      const tipV = parseFloat(inertiaTipVelocity?.value ?? '2.0');
+
+      // Rotation period from tip velocity: v = πL / T  →  T = πL / v
+      const rotationPeriodS = (Math.PI * lengthKm) / (tipV * 1000);
+
+      state.inertiaBanks.push({
+        id: String(state.inertiaBanks.length + 1),
+        orbitDistanceAU: orbitAU,
+        tetherLengthKm: lengthKm,
+        rotationPeriodS,
+        tipVelocityKms: tipV,
+        momentumReserve: 1.0,
+        totalCredits: 0,
+        ionDriveThrustN: 0.25,
+        ionDriveIspS: 4000,
+      });
+
+      displayInertiaBanks();
+    });
   }
 
   // Export calculation for debugging

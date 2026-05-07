@@ -78,6 +78,7 @@ function createDefaultState(): AppState {
     lastMouseX: 0,
     lastMouseY: 0,
     viewMode: 'planetary',
+    inertiaBanks: [],
   };
 }
 

@@ -179,6 +179,8 @@ export interface AppState {
   lastMouseY: number;
   /** FRD-067: current map view mode */
   viewMode: 'planetary' | 'barycenter';
+  /** FRD-071: Inertia Banks (momentum-exchange tethers) */
+  inertiaBanks: InertiaBank[];
 }
 
 // FRD-046: Saved star page format
@@ -238,6 +240,27 @@ export interface TravelPlannerState {
 
   // FRD-071: Cycler orbit (computed on demand, not persisted)
   cyclerOrbit: import('./cycler').CyclerOrbit | null;
+}
+
+/** FRD-071: Inertia Bank — rotating momentum-exchange tether (bolas) */
+export interface InertiaBank {
+  id: string;
+  /** Orbital distance from star in AU */
+  orbitDistanceAU: number;
+  /** Tether length in km */
+  tetherLengthKm: number;
+  /** Rotation period in seconds */
+  rotationPeriodS: number;
+  /** Tip velocity in km/s */
+  tipVelocityKms: number;
+  /** Current angular momentum reserve (0–1) */
+  momentumReserve: number;
+  /** Credits earned from catches and boosts */
+  totalCredits: number;
+  /** Ion drive thrust in N */
+  ionDriveThrustN: number;
+  /** Ion drive Isp in seconds */
+  ionDriveIspS: number;
 }
 
 // FRD-060 §30: SOI-Safe Routing
