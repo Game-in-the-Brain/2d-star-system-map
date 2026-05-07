@@ -156,7 +156,7 @@ Multi-year journeys between star systems.
 | 0: Foundation Repair | 2–3 days | All existing travel features work correctly |
 | 1: Orbital Transfers | 1–2 weeks | Real patched-conic trajectories, gravity assists |
 | 2: Strategic Planning | 1–1.5 weeks | Budget/deadline optimizer, fuel mass, hazard zones |
-| 3: Cyclers & Economics | 2–3 weeks | Recurring routes, schedules, demand model |
+| 3: **Cyclers & Inertia Banks** | 2–3 weeks | Recurring routes, schedules, inertia economy |
 | 4: Infrastructure | 2 weeks | Tethers, Lagrange points, momentum exchange |
 | 5: Interstellar | 1 week | Multi-year transfers, generation ships |
 
@@ -164,12 +164,35 @@ Multi-year journeys between star systems.
 
 ---
 
+## Phase 3: Cyclers & Inertia Banks (FRD-071)
+
+### 3.1 Cycler Orbit Calculator
+- Select two planets → compute resonant orbit that loops between them
+- Nuclear-Ion drive model: Isp 4,000 s, thrust 0.25 N, continuous low-thrust station-keeping
+- Calculate period, encounter frequency, and station-keeping ΔV
+- Visualize cycler orbit on canvas as a distinct elliptical path
+
+### 3.2 Cycler Schedules
+- Generate multiple synchronized cyclers on the same route
+- Staggered departures so there's always a cycler approaching
+- Gantt-style timeline showing all active cyclers and their encounter windows
+
+### 3.3 Inertia Banks
+- Place orbital stations that store momentum (spinning masses, EM tethers)
+- Vessels can **sell inertia** (brake at bank) or **buy inertia** (boost from bank)
+- Price based on bank's momentum reserve and Oberth effect at bank's orbital velocity
+- Visualize as hexagonal stations with radial momentum gauges
+
+**See:** `FRD-071-Orbital-Cyclers.md` for full specification.
+
+---
+
 ## Immediate Next Steps
 
-1. **Fix Phase 0 foundations** before writing any new physics code
-2. Start **FRD-063 (Gravity Assists)** — this unlocks everything else (shorter transfer times make deadlines feasible)
-3. Parallel: **FRD-069 (Roche Limit)** — simple physics, big safety improvement
-4. Then **FRD-065 (Hohmann/Lambert)** — replaces the straight-line chord with real orbital arcs
+1. ✅ **Phase 0 foundations** — Fixed in v2.27–v2.30
+2. ✅ **FRD-063 (Gravity Assists)** — Implemented v2.20–v2.24
+3. ✅ **FRD-065 (Hohmann/Lambert)** — Implemented v2.20, curved arcs v2.29
+4. 🔄 **Next: FRD-071 (Cyclers & Inertia Banks)** — Start with resonant orbit visualization
 
 ---
 
