@@ -5,6 +5,7 @@ import { hillSphereAU, calculateEscapeVelocityKms, estimateRadiusKm, getBodyPosi
 import { tickTravelTimeline } from './travelPlanner';
 import { drawGravityAssistTrajectory, generateRealWaypoints } from './gravityAssistDraw';
 import { solveLambert, sampleTransferOrbit } from './lambertSolver';
+import { sampleCyclerOrbit } from './cycler';
 
 export function resizeCanvas(state: AppState): void {
   if (!state.canvas) return;
@@ -739,6 +740,41 @@ function drawTravelPlannerOverlays(
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(failureReason, midX, midY + 28);
+      ctx.restore();
+    }
+  }
+
+  // ── FRD-071: Cycler Orbit Visualization ──
+  if (tp.cyclerOrbit) {
+    const cycler = tp.cyclerOrbit;
+    const orbitPointsAU = sampleCyclerOrbit(cycler, 128);
+
+    const { camera, width, height } = state;
+    const starOriginX = width / 2 - camera.x * camera.zoom;
+    const starOriginY = height / 2 - camera.y * camera.zoom;
+
+    const orbitPointsScreen = orbitPointsAU.map(p => {
+      const rAU = Math.hypot(p.x, p.y);
+      const theta = Math.atan2(p.y, p.x);
+      const distPx = rAU > 0 ? logScaleDistance(rAU, 80) * camera.zoom : 0;
+      return {
+        x: starOriginX + Math.cos(theta) * distPx,
+        y: starOriginY + Math.sin(theta) * distPx,
+      };
+    });
+
+    if (orbitPointsScreen.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(orbitPointsScreen[0].x, orbitPointsScreen[0].y);
+      for (let i = 1; i < orbitPointsScreen.length; i++) {
+        ctx.lineTo(orbitPointsScreen[i].x, orbitPointsScreen[i].y);
+      }
+      ctx.closePath();
+      ctx.stroke();
       ctx.restore();
     }
   }

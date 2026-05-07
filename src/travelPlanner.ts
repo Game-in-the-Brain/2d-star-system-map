@@ -3,6 +3,7 @@ import { buildTravelPlan, getBodyPositionAU, computeMinMaxDistanceAU } from './t
 import { patchedConicTransfer } from './patchedConic';
 import { findAssistOpportunities } from './gravityAssistPhysics';
 import { logScaleDistance } from './camera';
+import { computeCyclerOrbit } from './cycler';
 
 const HIT_RADIUS_PX = 18;
 
@@ -31,6 +32,7 @@ export function createTravelPlannerState(): TravelPlannerState {
     useGravityAssists: false,
     useMultiLegChains: false,
     deadlineDays: null,
+    cyclerOrbit: null,
   };
 }
 
@@ -283,6 +285,13 @@ export function initTravelPlanner(state: AppState): void {
   const resDeadlineDv = document.getElementById('res-deadline-dv');
   const resDeadlineStatus = document.getElementById('res-deadline-status');
 
+  // FRD-071: Cycler
+  const cyclerSection = document.getElementById('travel-cycler-section');
+  const resCyclerResonance = document.getElementById('res-cycler-resonance');
+  const resCyclerPeriod = document.getElementById('res-cycler-period');
+  const resCyclerEncounter = document.getElementById('res-cycler-encounter');
+  const resCyclerStation = document.getElementById('res-cycler-station');
+
   function updatePanel() {
     const hasOrigin = tp.originId !== null;
     const hasDest = tp.destinationId !== null;
@@ -514,6 +523,11 @@ export function initTravelPlanner(state: AppState): void {
       if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
     }
 
+    // Compute cycler orbit whenever two planets are selected (FRD-071)
+    const innerBody = originBody.distanceAU <= destBody.distanceAU ? originBody : destBody;
+    const outerBody = originBody.distanceAU <= destBody.distanceAU ? destBody : originBody;
+    tp.cyclerOrbit = computeCyclerOrbit(innerBody, outerBody, starMassSolar);
+
     // Show timeline for ALL calculated routes (possible or impossible) so the
     // user can still scrub/animate the trajectory.  Only hide when no plan exists.
     tp.timeline.travelDayOffset = Math.max(0, Math.min(tp.timeline.travelDayOffset, plan.pessimisticArrivalDays));
@@ -521,15 +535,41 @@ export function initTravelPlanner(state: AppState): void {
       tp.timeline.pinnedDepartureDayOffset = departureOffset;
     }
     showTimeline(plan);
+    displayCycler();
+  }
+
+  function displayCycler() {
+    if (!tp.cyclerOrbit) {
+      if (cyclerSection) cyclerSection.style.display = 'none';
+      return;
+    }
+    const c = tp.cyclerOrbit;
+    if (cyclerSection) cyclerSection.style.display = 'block';
+    if (resCyclerResonance) {
+      resCyclerResonance.textContent = `${c.resonance.n}:${c.resonance.m}`;
+    }
+    if (resCyclerPeriod) {
+      const y = c.periodDays / 365;
+      resCyclerPeriod.textContent = y >= 1 ? `${y.toFixed(2)}y` : `${Math.round(c.periodDays)}d`;
+    }
+    if (resCyclerEncounter) {
+      const d = c.encounterIntervalDays;
+      resCyclerEncounter.textContent = d >= 365 ? `${(d/365).toFixed(1)}y` : `${Math.round(d)}d`;
+    }
+    if (resCyclerStation) {
+      resCyclerStation.textContent = `${c.stationKeepingMpsPerYear} m/s/yr`;
+    }
   }
 
   function clearSelection() {
     tp.originId = null;
     tp.destinationId = null;
     tp.lastPlan = null;
+    tp.cyclerOrbit = null;
     tp.timeline = createTimelineState();
     if (travelResults) travelResults.style.display = 'none';
     if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
+    if (cyclerSection) cyclerSection.style.display = 'none';
     hideTimeline();
     updatePanel();
   }

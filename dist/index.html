@@ -11,7 +11,7 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-Cd0JfD9o.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-W8GvkJTX.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Coiiow2t.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
@@ -317,6 +317,32 @@
                 <button id="btn-timeline-reverse" class="btn small" title="Reverse">⏪</button>
                 <button id="btn-pin-departure" class="btn small" title="Pin current sim date as departure">📌 Pin</button>
                 <button id="btn-jump-arrival" class="btn small" title="Jump to optimistic arrival">🎯 Jump</button>
+              </div>
+            </div>
+
+            <!-- Cycler Orbit (FRD-071) -->
+            <div id="travel-cycler-section" class="travel-cycler-section" style="display:none;">
+              <div class="travel-timeline-header">
+                <span class="travel-result-label">Cycler Orbit</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Resonance:</span>
+                <span id="res-cycler-resonance" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Period:</span>
+                <span id="res-cycler-period" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Encounter:</span>
+                <span id="res-cycler-encounter" class="travel-result-value">—</span>
+              </div>
+              <div class="travel-result-row">
+                <span class="travel-result-label">Station-keep:</span>
+                <span id="res-cycler-station" class="travel-result-value">—</span>
+              </div>
+              <div class="control-row" style="justify-content:center; gap:4px; flex-wrap:wrap; margin-top:2px;">
+                <button id="btn-cycler-animate" class="btn small" title="Animate cycler">▶ Orbit</button>
               </div>
             </div>
           </div>
