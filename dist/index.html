@@ -11,7 +11,7 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <script type="module" crossorigin src="/2d-star-system-map/assets/main-CPbppXG1.js"></script>
+    <script type="module" crossorigin src="/2d-star-system-map/assets/main-dUa18TA9.js"></script>
     <link rel="modulepreload" crossorigin href="/2d-star-system-map/assets/modulepreload-polyfill-B5Qt9EMX.js">
     <link rel="stylesheet" crossorigin href="/2d-star-system-map/assets/main-Coiiow2t.css">
   <link rel="manifest" href="/2d-star-system-map/manifest.webmanifest"></head>
@@ -159,19 +159,27 @@
               <label for="travel-delta-v">ΔV Budget (km/s)</label>
               <input id="travel-delta-v" type="number" step="0.1" min="0" value="20" />
 
-              <label for="travel-accel" title="Constant acceleration for brachistochrone (straight-line) trajectory. Higher G = faster trip but ignores orbital mechanics.">Acceleration (G) <span style="opacity:0.5;cursor:help">ⓘ</span></label>
-              <input id="travel-accel" type="number" step="0.01" min="0.01" value="0.1" />
-
               <label for="travel-deadline">Max Transit (days)</label>
               <input id="travel-deadline" type="number" step="1" min="1" placeholder="∞" />
             </div>
 
+            <!-- Travel Model -->
+            <div class="travel-section">
+              <label class="travel-result-label" style="margin-bottom:4px;">Travel Model</label>
+              <div class="travel-toggles">
+                <label class="toggle-row">
+                  <input id="travel-mode-delta-v" name="travel-mode" type="radio" value="delta-v" checked />
+                  <span>Delta-V Budget</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="travel-mode-hohmann" name="travel-mode" type="radio" value="hohmann" />
+                  <span>Hohmann Transfer</span>
+                </label>
+              </div>
+            </div>
+
             <!-- Toggles -->
             <div class="travel-toggles">
-              <label class="toggle-row">
-                <input id="travel-soi-safe" type="checkbox" checked />
-                <span>SOI-Safe Routing</span>
-              </label>
               <label class="toggle-row">
                 <input id="travel-gravity-assists" type="checkbox" />
                 <span>Use Gravity Assists</span>
@@ -247,16 +255,6 @@
                 </div>
               </div>
 
-              <!-- Time & distance -->
-              <div class="travel-result-row divider"></div>
-              <div class="travel-result-row">
-                <span class="travel-result-label">Flight Time:</span>
-                <span id="res-flight-time" class="travel-result-value">—</span>
-              </div>
-              <div class="travel-result-row">
-                <span class="travel-result-label">Distance:</span>
-                <span id="res-distance" class="travel-result-value">—</span>
-              </div>
               <div class="travel-result-row">
                 <span class="travel-result-label">Next Window:</span>
                 <span id="res-next-window" class="travel-result-value">—</span>
@@ -272,25 +270,6 @@
                 <div class="travel-result-row">
                   <span class="travel-result-label">Deadline Status:</span>
                   <span id="res-deadline-status" class="travel-result-value">—</span>
-                </div>
-              </div>
-
-              <!-- SOI info (populated when SOI-safe is on) -->
-              <div id="travel-soi-section" style="display:none;">
-                <div class="travel-result-row divider"></div>
-                <div class="travel-result-row">
-                  <span class="travel-result-label">SOI Detours:</span>
-                  <span id="res-soi-detours" class="travel-result-value">—</span>
-                </div>
-                <div id="travel-soi-list" class="travel-soi-list"></div>
-              </div>
-
-              <!-- Wait alternative -->
-              <div id="travel-wait-section" style="display:none;">
-                <div class="travel-result-row divider"></div>
-                <div class="travel-result-row">
-                  <span class="travel-result-label">Wait Alternative:</span>
-                  <span id="res-wait-total" class="travel-result-value">—</span>
                 </div>
               </div>
 

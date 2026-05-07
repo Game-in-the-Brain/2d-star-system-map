@@ -264,16 +264,9 @@ export function initTravelPlanner(state: AppState): void {
   const resHrsCost = document.getElementById('res-hrs-cost');
   const resMinDv = document.getElementById('res-min-dv');
   const resExcessDv = document.getElementById('res-excess-dv');
-  const resFlightTime = document.getElementById('res-flight-time');
-  const resDistance = document.getElementById('res-distance');
   const resNextWindow = document.getElementById('res-next-window');
   const resFailureReason = document.getElementById('res-failure-reason');
   const resOptimistic = document.getElementById('res-optimistic');
-  const travelSoiSection = document.getElementById('travel-soi-section');
-  const travelSoiList = document.getElementById('travel-soi-list');
-  const resSoiDetours = document.getElementById('res-soi-detours');
-  const travelWaitSection = document.getElementById('travel-wait-section');
-  const resWaitTotal = document.getElementById('res-wait-total');
   const btnExportCalc = document.getElementById('btn-export-calc') as HTMLButtonElement | null;
 
   // Patched Conic Baseline (always visible)
@@ -449,52 +442,6 @@ export function initTravelPlanner(state: AppState): void {
     }
   }
 
-  function displaySoiResults(calcResult: import('./types').TravelResult) {
-    if (!travelResults) return;
-    travelResults.style.display = 'flex';
-
-    if (resFlightTime) {
-      resFlightTime.textContent = `${calcResult.flightTimeDays.toFixed(1)}d`;
-    }
-    if (resDistance) {
-      resDistance.textContent = `${calcResult.pathDistanceAU.toFixed(2)} AU`;
-    }
-
-    // Gravity assist indicator
-    if (tp.useGravityAssists && resFailureReason) {
-      if (tp.useMultiLegChains) {
-        resFailureReason.textContent = '🔬 Multi-leg gravity assist chains active (patched conic physics — FRD-063)';
-      } else {
-        resFailureReason.textContent = '🔬 Gravity assist visualization active (patched conic physics — FRD-063)';
-      }
-      resFailureReason.style.display = 'block';
-      resFailureReason.style.color = '#60a5fa';
-    }
-
-    // SOI intersections
-    if (travelSoiSection && travelSoiList && resSoiDetours) {
-      if (calcResult.soiIntersections.length > 0) {
-        travelSoiSection.style.display = 'block';
-        resSoiDetours.textContent = `${calcResult.detourAddedAU.toFixed(3)} AU`;
-        travelSoiList.innerHTML = calcResult.soiIntersections.map(hit =>
-          `<div class="travel-soi-item">⚠ ${hit.bodyLabel} +${hit.detourAddedAU.toFixed(3)} AU</div>`
-        ).join('');
-      } else {
-        travelSoiSection.style.display = 'none';
-      }
-    }
-
-    // Wait alternative
-    if (travelWaitSection && resWaitTotal) {
-      if (calcResult.waitAlternative) {
-        travelWaitSection.style.display = 'block';
-        resWaitTotal.textContent = `${calcResult.waitAlternative.totalTimeDays.toFixed(1)}d (wait ${calcResult.waitAlternative.waitDays.toFixed(1)}d)`;
-      } else {
-        travelWaitSection.style.display = 'none';
-      }
-    }
-  }
-
   function calculateTransfer() {
     if (!tp.originId || !tp.destinationId) return;
     const originBody = state.bodies.find((b) => b.id === tp.originId);
@@ -502,36 +449,47 @@ export function initTravelPlanner(state: AppState): void {
     if (!originBody || !destBody) return;
 
     const starMassSolar = state.bodies.find(b => b.type === 'star-primary')?.mass ?? 1;
-    const starMassEM = starMassSolar * 332946;
     const budget = parseFloat(deltaVInput?.value ?? '20');
-    const accelG = parseFloat(accelInput?.value ?? '0.1');
     const departureOffset = tp.timeline.pinnedDepartureDayOffset
       ?? (tp.useSimDate ? state.simDayOffset : tp.customDepartureDayOffset);
 
-    // 1. Delta-V budget plan (escape + capture + HRS)
-    const plan = buildTravelPlan(originBody, destBody, budget, departureOffset, state.bodies, starMassSolar);
+    let plan: TravelPlan;
+
+    if (tp.travelMode === 'hohmann') {
+      // Hohmann mode: build plan from patched conic transfer
+      const hohmann = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset);
+      if (hohmann) {
+        plan = buildHohmannTravelPlan(originBody, destBody, hohmann, budget, departureOffset);
+      } else {
+        // Fallback: impossible plan with basic info
+        plan = {
+          originId: originBody.id,
+          destinationId: destBody.id,
+          departureDayOffset: departureOffset,
+          deltaVBudgetKms: budget,
+          escapeOriginKms: 0,
+          captureDestKms: 0,
+          excessDeltaVKms: 0,
+          optimisticArrivalDays: 365,
+          pessimisticArrivalDays: 365,
+          synodicPeriodDays: 0,
+          nextWindowDayOffset: departureOffset,
+          isPossible: false,
+          failureReason: 'Hohmann transfer could not be computed.',
+        };
+      }
+    } else {
+      // Delta-V budget mode: escape + capture + HRS
+      plan = buildTravelPlan(originBody, destBody, budget, departureOffset, state.bodies, starMassSolar);
+    }
+
     tp.lastPlan = plan;
     displayResults(plan);
 
-    // 2. SOI-safe / brachistochrone calculation (from travelCalc.ts)
-    const allTravelBodies = state.bodies
-      .filter(b => !b.type.startsWith('star'))
-      .map(b => toTravelBody(b, starMassSolar));
-    const origin = toTravelBody(originBody, starMassSolar);
-    const destination = toTravelBody(destBody, starMassSolar);
-
-    const calcResult = calculateTravel(
-      { origin, destination, accelG, routingMode: tp.routingMode, departureOffsetDays: departureOffset },
-      allTravelBodies,
-      starMassEM
-    );
-    tp.lastCalcResult = calcResult;
-    displaySoiResults(calcResult);
-
-    // 3. Patched conic baseline (Hohmann) — always computed
+    // Patched conic baseline (Hohmann) — always computed for display
     const hohmannTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset);
 
-    // 4. Gravity assist analysis (when enabled)
+    // Gravity assist analysis (when enabled)
     let bestAssist: { assistDv: number; totalDv: number; bodyLabel: string } | null = null;
     if (tp.useGravityAssists && hohmannTransfer) {
       const assists = findAssistOpportunities(
@@ -548,7 +506,7 @@ export function initTravelPlanner(state: AppState): void {
     }
     displayPatchedConicResults(hohmannTransfer, bestAssist);
 
-    // 5. FRD-064: Deadline / fast transfer analysis
+    // FRD-064: Deadline / fast transfer analysis
     if (tp.deadlineDays && tp.deadlineDays > 0 && hohmannTransfer) {
       const deadlineTransfer = patchedConicTransfer(originBody, destBody, starMassSolar, departureOffset, tp.deadlineDays);
       displayDeadlineResults(hohmannTransfer, deadlineTransfer, budget);
@@ -569,11 +527,8 @@ export function initTravelPlanner(state: AppState): void {
     tp.originId = null;
     tp.destinationId = null;
     tp.lastPlan = null;
-    tp.lastCalcResult = null;
     tp.timeline = createTimelineState();
     if (travelResults) travelResults.style.display = 'none';
-    if (travelSoiSection) travelSoiSection.style.display = 'none';
-    if (travelWaitSection) travelWaitSection.style.display = 'none';
     if (travelDeadlineSection) travelDeadlineSection.style.display = 'none';
     hideTimeline();
     updatePanel();
@@ -671,8 +626,7 @@ export function initTravelPlanner(state: AppState): void {
         `Synodic Period: ${tp.lastPlan.synodicPeriodDays.toFixed(0)} days`,
         '',
         '--- Settings ---',
-        `Routing Mode: ${tp.routingMode}`,
-        `Acceleration: ${tp.accelG} G`,
+        `Travel Mode: ${tp.travelMode}`,
         `Gravity Assists: ${tp.useGravityAssists ? 'ON' : 'OFF'}`,
         `Multi-Leg Chains: ${tp.useMultiLegChains ? 'ON' : 'OFF'}`,
         `Deadline: ${tp.deadlineDays ? tp.deadlineDays + ' days' : 'None'}`,
@@ -700,11 +654,21 @@ export function initTravelPlanner(state: AppState): void {
     });
   }
 
-  // Toggle: SOI-safe routing
-  if (soiSafeCheck) {
-    soiSafeCheck.addEventListener('change', () => {
-      tp.routingMode = soiSafeCheck.checked ? 'soi-safe' : 'direct';
-      if (tp.lastPlan) calculateTransfer();
+  // Toggle: Travel mode (delta-v vs hohmann)
+  if (travelModeDeltaV) {
+    travelModeDeltaV.addEventListener('change', () => {
+      if (travelModeDeltaV.checked) {
+        tp.travelMode = 'delta-v';
+        if (tp.lastPlan) calculateTransfer();
+      }
+    });
+  }
+  if (travelModeHohmann) {
+    travelModeHohmann.addEventListener('change', () => {
+      if (travelModeHohmann.checked) {
+        tp.travelMode = 'hohmann';
+        if (tp.lastPlan) calculateTransfer();
+      }
     });
   }
 
