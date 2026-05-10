@@ -1,8 +1,10 @@
 # 2D Star System Map
 
+**Products:** [https://blog.gi7b.org](https://blog.gi7b.org)
+
 Standalone 2D animated star system map for the Mneme CE World Generator.
 
-**Live URL:** `https://game-in-the-brain.github.io/2d-star-system-map/`
+**Live URL:** `https://pages.gi7b.org/gi7b/2d-star-system-map/`
 
 ---
 
@@ -11,7 +13,7 @@ Standalone 2D animated star system map for the Mneme CE World Generator.
 The map accepts a Base64-encoded `StarSystem` payload via the `?system=` query parameter. The easiest way to generate test data is straight from the MWG browser console.
 
 ### Step 1: Generate a system in MWG
-Open [Mneme CE World Generator](https://game-in-the-brain.github.io/Mneme-CE-World-Generator/), click **Generate System**, then open DevTools → Console.
+Open [Mneme CE World Generator](https://pages.gi7b.org/gi7b/Mneme-CE-World-Generator/), click **Generate System**, then open DevTools → Console.
 
 ### Step 2: Run this snippet
 ```javascript
@@ -23,7 +25,7 @@ const payload = {
 };
 const json = JSON.stringify(payload);
 const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
-const url = `https://game-in-the-brain.github.io/2d-star-system-map/?system=${encoded}`;
+const url = `https://pages.gi7b.org/gi7b/2d-star-system-map/?system=${encoded}`;
 console.log(url);
 window.open(url, '_blank');
 ```
